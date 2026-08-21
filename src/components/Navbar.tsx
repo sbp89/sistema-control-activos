@@ -2,23 +2,37 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { 
   History, 
   PlusCircle, 
   ShieldCheck,
   Menu,
-  X
+  X,
+  LogOut,
+  User
 } from 'lucide-react';
+import { logoutUser, AUTH_USER_EMAIL } from '@/lib/auth';
 
 export default function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Ocultar Navbar en la ruta de firma remota de WhatsApp y en la página de Login
+  if (pathname.startsWith('/firmar') || pathname === '/login') {
+    return null;
+  }
 
   const navLinks = [
     { href: '/', label: 'Nuevo Registro', icon: PlusCircle },
     { href: '/historial', label: 'Historial de Actas', icon: History },
   ];
+
+  const handleLogout = () => {
+    logoutUser();
+    router.replace('/login');
+  };
 
   return (
     <header className="sticky top-0 z-40 bg-slate-900 border-b border-slate-800 text-white shadow-sm">
@@ -59,10 +73,31 @@ export default function Navbar() {
                 </Link>
               );
             })}
+
+            {/* Usuario y Botón Cerrar Sesión */}
+            <div className="pl-3 border-l border-slate-800 flex items-center gap-2">
+              <span className="text-xs text-slate-400 font-medium hidden lg:inline">
+                {AUTH_USER_EMAIL}
+              </span>
+              <button
+                onClick={handleLogout}
+                className="p-2 rounded-xl text-slate-400 hover:text-red-400 hover:bg-slate-800 transition-colors"
+                title="Cerrar Sesión"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
           </nav>
 
           {/* Botón Menú Móvil */}
-          <div className="flex md:hidden">
+          <div className="flex md:hidden items-center gap-2">
+            <button
+              onClick={handleLogout}
+              className="p-2 rounded-lg text-slate-400 hover:text-red-400"
+              title="Cerrar Sesión"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 focus:outline-none"
