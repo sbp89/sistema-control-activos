@@ -28,6 +28,12 @@ import {
 import { generateId, generateFolio } from '@/lib/utils';
 import { saveRegistro } from '@/lib/db';
 import { sendPdfToDrive } from '@/lib/drive-service';
+import { 
+  formatMoneyInput, 
+  formatGramsInput, 
+  parseFormattedNumber, 
+  parseGramsValue 
+} from '@/lib/number-formatter';
 import CameraCapture from './CameraCapture';
 import SignaturePad from './SignaturePad';
 import MaterialItemsTable from './MaterialItemsTable';
@@ -44,7 +50,7 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
   const [fechaHora, setFechaHora] = useState<string>(() => new Date().toISOString().slice(0, 16));
   const [ubicacion, setUbicacion] = useState<UbicacionData>({ sede: '', proyecto: '' });
 
-  // Módulo de Oro (Gramos y Liquidación)
+  // Módulo de Oro con strings formateados en tiempo real
   const [oroGramos, setOroGramos] = useState<string>('');
   const [oroLiquidacion, setOroLiquidacion] = useState<string>('');
   const [oroPrecioGramo, setOroPrecioGramo] = useState<string>('');
@@ -88,32 +94,48 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
   const [savedRegistro, setSavedRegistro] = useState<Registro | null>(null);
   const [borradorToShare, setBorradorToShare] = useState<Partial<BorradorRemoto> | null>(null);
 
-  // Cálculo asistido
-  const handleGramosChange = (val: string) => {
-    setOroGramos(val);
-    const g = parseFloat(val) || 0;
-    const p = parseFloat(oroPrecioGramo) || 0;
+  // Handlers con puntuación automática inteligente
+  const handleGramosChange = (raw: string) => {
+    // Si termina en punto o coma mientras el usuario escribe, mantenerlo
+    if (raw.endsWith('.') || raw.endsWith(',')) {
+      setOroGramos(raw);
+      return;
+    }
+
+    const formatted = formatGramsInput(raw);
+    setOroGramos(formatted);
+
+    const g = parseGramsValue(formatted);
+    const p = parseFormattedNumber(oroPrecioGramo);
     if (g > 0 && p > 0) {
-      setOroLiquidacion(String(Math.round(g * p)));
+      setOroLiquidacion(formatMoneyInput(String(Math.round(g * p))));
     }
   };
 
-  const handlePrecioGramoChange = (val: string) => {
-    setOroPrecioGramo(val);
-    const p = parseFloat(val) || 0;
-    const g = parseFloat(oroGramos) || 0;
+  const handlePrecioGramoChange = (raw: string) => {
+    const formatted = formatMoneyInput(raw);
+    setOroPrecioGramo(formatted);
+
+    const p = parseFormattedNumber(formatted);
+    const g = parseGramsValue(oroGramos);
     if (g > 0 && p > 0) {
-      setOroLiquidacion(String(Math.round(g * p)));
+      setOroLiquidacion(formatMoneyInput(String(Math.round(g * p))));
     }
   };
 
-  const handleLiquidacionChange = (val: string) => {
-    setOroLiquidacion(val);
-    const liq = parseFloat(val) || 0;
-    const g = parseFloat(oroGramos) || 0;
+  const handleLiquidacionChange = (raw: string) => {
+    const formatted = formatMoneyInput(raw);
+    setOroLiquidacion(formatted);
+
+    const liq = parseFormattedNumber(formatted);
+    const g = parseGramsValue(oroGramos);
     if (g > 0 && liq > 0) {
-      setOroPrecioGramo(String(Math.round(liq / g)));
+      setOroPrecioGramo(formatMoneyInput(String(Math.round(liq / g))));
     }
+  };
+
+  const handleMontoDineroChange = (raw: string) => {
+    setMontoDinero(formatMoneyInput(raw));
   };
 
   const handleGetLocation = () => {
@@ -134,10 +156,10 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
   // Preparar borrador para compartir por WhatsApp
   const handleShareDraft = () => {
     const folio = generateFolio(tipoOperacion);
-    const parsedGramos = parseFloat(oroGramos) || 0;
-    const parsedLiquidacion = parseFloat(oroLiquidacion) || 0;
-    const parsedPrecioG = parseFloat(oroPrecioGramo) || 0;
-    const parsedMontoDinero = parseFloat(montoDinero) || 0;
+    const parsedGramos = parseGramsValue(oroGramos);
+    const parsedLiquidacion = parseFormattedNumber(oroLiquidacion);
+    const parsedPrecioG = parseFormattedNumber(oroPrecioGramo);
+    const parsedMontoDinero = parseFormattedNumber(montoDinero);
 
     const cleanedMateriales = (categoria === 'MATERIAL' || categoria === 'MIXTO')
       ? materiales.filter((m) => m.descripcion.trim().length > 0 || (m.cantidad && m.cantidad > 0))
@@ -186,10 +208,10 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
 
     try {
       const folio = generateFolio(tipoOperacion);
-      const parsedGramos = parseFloat(oroGramos) || 0;
-      const parsedLiquidacion = parseFloat(oroLiquidacion) || 0;
-      const parsedPrecioG = parseFloat(oroPrecioGramo) || 0;
-      const parsedMontoDinero = parseFloat(montoDinero) || 0;
+      const parsedGramos = parseGramsValue(oroGramos);
+      const parsedLiquidacion = parseFormattedNumber(oroLiquidacion);
+      const parsedPrecioG = parseFormattedNumber(oroPrecioGramo);
+      const parsedMontoDinero = parseFormattedNumber(montoDinero);
 
       const cleanedMateriales = (categoria === 'MATERIAL' || categoria === 'MIXTO')
         ? materiales.filter((m) => m.descripcion.trim().length > 0 || (m.cantidad && m.cantidad > 0))
@@ -381,16 +403,15 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
-              {/* Gramos */}
+              {/* Gramos con soporte fluido de decimales y puntuación */}
               <div className="sm:col-span-4">
                 <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
                   Peso en Gramos (g)
                 </label>
                 <div className="relative">
                   <input
-                    type="number"
-                    step="any"
-                    min="0"
+                    type="text"
+                    inputMode="decimal"
                     value={oroGramos}
                     onChange={(e) => handleGramosChange(e.target.value)}
                     placeholder="0.00"
@@ -400,41 +421,41 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
                     g
                   </span>
                 </div>
+                <p className="text-[10px] text-slate-400 mt-1">Soporta decimales ej. 48.50 o 12.35</p>
               </div>
 
-              {/* Valor Liquidación */}
+              {/* Valor Liquidación con puntuación automática de miles */}
               <div className="sm:col-span-5">
                 <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
-                  Valor de Liquidación ($)
+                  Valor de Liquidación Total ($)
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">$</span>
                   <input
-                    type="number"
-                    step="any"
-                    min="0"
+                    type="text"
+                    inputMode="numeric"
                     value={oroLiquidacion}
                     onChange={(e) => handleLiquidacionChange(e.target.value)}
                     placeholder="0"
                     className="w-full pl-7 pr-3 py-2.5 text-base font-black rounded-xl border border-amber-300 dark:border-amber-800 bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 focus:ring-2 focus:ring-amber-500 focus:outline-none"
                   />
                 </div>
+                <p className="text-[10px] text-slate-400 mt-1">Puntos de miles automáticos ej. 16.975.000</p>
               </div>
 
               {/* Precio por Gramo */}
               <div className="sm:col-span-3">
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
                   <Calculator className="w-3 h-3 text-slate-400" />
-                  <span>Precio/g</span>
+                  <span>Precio/g ($)</span>
                 </label>
                 <input
-                  type="number"
-                  step="any"
-                  min="0"
+                  type="text"
+                  inputMode="numeric"
                   value={oroPrecioGramo}
                   onChange={(e) => handlePrecioGramoChange(e.target.value)}
-                  placeholder="Precio/g"
-                  className="w-full px-3 py-2.5 text-sm rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  placeholder="350.000"
+                  className="w-full px-3 py-2.5 text-sm font-semibold rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
                 />
               </div>
 
@@ -484,6 +505,7 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+              {/* Monto Dinero con puntuación automática */}
               <div className="sm:col-span-6">
                 <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
                   Monto Total ($)
@@ -491,15 +513,15 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">$</span>
                   <input
-                    type="number"
-                    step="any"
-                    min="0"
+                    type="text"
+                    inputMode="numeric"
                     value={montoDinero}
-                    onChange={(e) => setMontoDinero(e.target.value)}
+                    onChange={(e) => handleMontoDineroChange(e.target.value)}
                     placeholder="0"
                     className="w-full pl-7 pr-3 py-2.5 text-base font-black rounded-xl border border-emerald-300 dark:border-emerald-800 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                   />
                 </div>
+                <p className="text-[10px] text-slate-400 mt-1">Puntos de miles automáticos ej. 1.500.000</p>
               </div>
 
               <div className="sm:col-span-3">
@@ -717,7 +739,7 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
           </div>
         </section>
 
-        {/* Botones de Acción Dual: Emitir Inmediato o Compartir por WhatsApp */}
+        {/* Botones de Acción Dual */}
         <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
           <button
             type="button"
