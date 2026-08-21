@@ -135,9 +135,6 @@ export default function ReceiptModal({
                   <span className="text-2xl font-black text-amber-700 dark:text-amber-400">
                     {registro.oro.gramos.toFixed(2)} g
                   </span>
-                  {registro.oro.leyPureza && (
-                    <span className="text-xs text-slate-500 ml-2">({registro.oro.leyPureza})</span>
-                  )}
                 </div>
                 <div className="text-right">
                   <span className="text-lg font-black text-emerald-600 dark:text-emerald-400">

@@ -36,7 +36,6 @@ const DEMO_REGISTROS: Registro[] = [
       valorLiquidacion: 16975000,
       precioPorGramo: 350000,
       moneda: 'COP',
-      leyPureza: '18K (Ley 750)',
       tipoPieza: 'Barra Fundida',
       observaciones: 'Sellada con precinto #ORO-881',
     },

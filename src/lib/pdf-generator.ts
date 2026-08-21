@@ -15,7 +15,6 @@ export async function generateActaPdf(registro: Registro): Promise<jsPDF> {
   const margin = 14;
   let currentY = margin;
 
-  // Paleta de colores profesionales
   const primaryColor = registro.tipoOperacion === 'ENTREGA' ? [22, 101, 52] : [15, 118, 110];
   const darkGray = [30, 41, 59];
   const lightGray = [241, 245, 249];
@@ -116,47 +115,45 @@ export async function generateActaPdf(registro: Registro): Promise<jsPDF> {
   currentY += 26;
 
   // --- SECCIÓN ORO (SI APLICA) ---
-  if (registro.oro && registro.oro.gramos > 0) {
+  if (registro.oro && (registro.oro.gramos > 0 || registro.oro.valorLiquidacion > 0)) {
     currentY = drawSectionHeader('2. Detalle y Liquidación de Oro', currentY);
 
     doc.setDrawColor(borderGray[0], borderGray[1], borderGray[2]);
     doc.setFillColor(254, 252, 232); // Fondo dorado suave
-    doc.roundedRect(margin, currentY, pageWidth - margin * 2, 22, 1, 1, 'FD');
+    doc.roundedRect(margin, currentY, pageWidth - margin * 2, 20, 1, 1, 'FD');
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
-    doc.setTextColor(146, 64, 14); // Amber 800
+    doc.setTextColor(146, 64, 14);
     doc.text('PESO EN GRAMOS:', margin + 3, currentY + 5);
-    doc.text('VALOR LIQUIDACIÓN:', margin + 55, currentY + 5);
-    doc.text('PRECIO X GRAMO:', margin + 115, currentY + 5);
-    doc.text('PUREZA / LEY:', margin + 155, currentY + 5);
+    doc.text('VALOR LIQUIDACIÓN TOTAL:', margin + 65, currentY + 5);
+    doc.text('PRECIO X GRAMO:', margin + 135, currentY + 5);
 
     doc.setFontSize(12);
     doc.setTextColor(180, 83, 9);
     doc.text(`${registro.oro.gramos.toFixed(2)} g`, margin + 3, currentY + 12);
 
     doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.text(formatMoney(registro.oro.valorLiquidacion, registro.oro.moneda || 'COP'), margin + 55, currentY + 12);
+    doc.text(formatMoney(registro.oro.valorLiquidacion, registro.oro.moneda || 'COP'), margin + 65, currentY + 12);
 
     doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
     const precioXg = registro.oro.precioPorGramo || (registro.oro.gramos > 0 ? Math.round(registro.oro.valorLiquidacion / registro.oro.gramos) : 0);
-    doc.text(formatMoney(precioXg, registro.oro.moneda || 'COP'), margin + 115, currentY + 12);
-    doc.text(registro.oro.leyPureza || 'No especificada', margin + 155, currentY + 12);
+    doc.text(formatMoney(precioXg, registro.oro.moneda || 'COP'), margin + 135, currentY + 12);
 
     if (registro.oro.tipoPieza || registro.oro.observaciones) {
       doc.setFontSize(7.5);
       doc.setFont('helvetica', 'italic');
       doc.setTextColor(71, 85, 105);
       const descOro = [
-        registro.oro.tipoPieza ? `Tipo: ${registro.oro.tipoPieza}` : null,
+        registro.oro.tipoPieza ? `Presentación: ${registro.oro.tipoPieza}` : null,
         registro.oro.observaciones ? `Detalle: ${registro.oro.observaciones}` : null,
       ].filter(Boolean).join(' | ');
-      doc.text(descOro, margin + 3, currentY + 18);
+      doc.text(descOro, margin + 3, currentY + 17);
     }
 
-    currentY += 26;
+    currentY += 24;
   }
 
   // --- SECCIÓN DINERO (SI APLICA) ---
@@ -360,9 +357,9 @@ export async function generateActaPdf(registro: Registro): Promise<jsPDF> {
       folio: registro.folio,
       tipo: registro.tipoOperacion,
       fecha: registro.fechaHora,
-      monto: registro.dinero?.monto,
       oroGramos: registro.oro?.gramos,
       oroLiquidacion: registro.oro?.valorLiquidacion,
+      monto: registro.dinero?.monto,
     });
 
     const qrBase64 = await QRCode.toDataURL(qrData, { margin: 1, width: 80 });

@@ -11,8 +11,7 @@ export interface DetalleOro {
   valorLiquidacion: number;
   precioPorGramo?: number;
   moneda?: string; // 'COP', 'USD', etc.
-  leyPureza?: string; // '24K (Puro)', '18K (750)', '14K', 'Ley 900', 'Fundición', 'Chatarra', etc.
-  tipoPieza?: string; // 'Lingote', 'Barra', 'Chatarra', 'Joyas', 'Lámina', 'Granalla'
+  tipoPieza?: string; // 'Lingote', 'Barra', 'Chatarra', 'Joyas', 'Lámina', etc.
   observaciones?: string;
 }
 
@@ -20,7 +19,7 @@ export interface ItemMaterial {
   id: string;
   descripcion: string;
   cantidad: number;
-  unidad: string; // 'unidad', 'kg', 'metros', 'cajas', etc.
+  unidad: string;
   estado?: EstadoMaterial;
   numeroSerie?: string;
   codigoInventario?: string;
@@ -66,30 +65,27 @@ export interface UbicacionData {
 
 export interface Registro {
   id: string;
-  folio: string; // Ej: ACT-20260821-4821
+  folio: string;
   tipoOperacion: TipoOperacion;
   categoria: CategoriaOperacion;
-  fechaHora: string; // ISO string
+  fechaHora: string;
   ubicacion?: UbicacionData;
   
-  // Participantes (Opcionales por confidencialidad)
   entregaPor?: Participante;
   recibePor?: Participante;
 
-  // Datos específicos por categoría
   dinero?: DetalleDinero;
   oro?: DetalleOro;
   materiales?: ItemMaterial[];
 
-  // Evidencias fotográficas y firmas
   fotos?: EvidenciaFoto[];
   firmaEntrega?: FirmaDigital;
   firmaRecibe?: FirmaDigital;
 
-  // Observaciones
   observacionesGenerales?: string;
   clausulaAceptada?: boolean;
   sincronizadoDrive?: boolean;
+  completadoRemoto?: boolean;
   creadoEn: string;
   actualizadoEn: string;
 }
@@ -113,4 +109,24 @@ export interface ResumenEstadisticas {
   totalOroGramosRecibidos: number;
   totalMaterialesEntregados: number;
   totalMaterialesRecibidos: number;
+}
+
+export interface BorradorRemoto {
+  id: string;
+  folio: string;
+  tipoOperacion: TipoOperacion;
+  categoria: CategoriaOperacion;
+  fechaHora: string;
+  ubicacion?: UbicacionData;
+  entregaPor?: Participante;
+  recibePor?: Participante;
+  dinero?: DetalleDinero;
+  oro?: DetalleOro;
+  materiales?: ItemMaterial[];
+  firmaEmisor?: FirmaDigital;
+  fotosEmisor?: EvidenciaFoto[];
+  parteAFirmar: 'ENTREGA' | 'RECEPCION';
+  creadoEn: string;
+  expiraEn?: string;
+  completado: boolean;
 }

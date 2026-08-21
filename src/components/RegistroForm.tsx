@@ -11,20 +11,19 @@ import {
   FileCheck2, 
   RefreshCw,
   Navigation,
-  Sparkles,
-  Calculator
+  Calculator,
+  Share2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { 
   Registro, 
   TipoOperacion, 
   CategoriaOperacion, 
-  DetalleDinero, 
-  DetalleOro, 
   ItemMaterial, 
   Participante, 
   EvidenciaFoto, 
-  UbicacionData 
+  UbicacionData,
+  BorradorRemoto
 } from '@/lib/types';
 import { generateId, generateFolio } from '@/lib/utils';
 import { saveRegistro } from '@/lib/db';
@@ -33,35 +32,23 @@ import CameraCapture from './CameraCapture';
 import SignaturePad from './SignaturePad';
 import MaterialItemsTable from './MaterialItemsTable';
 import ReceiptModal from './ReceiptModal';
+import ShareWhatsAppModal from './ShareWhatsAppModal';
 
 const MONEDAS = ['COP', 'USD', 'EUR', 'MXN', 'ARS', 'CLP', 'PEN'];
 const METODOS_PAGO = ['EFECTIVO', 'TRANSFERENCIA', 'CHEQUE', 'CONSIGNACION', 'OTRO'];
-const LEYES_ORO = [
-  '24K (Puro / Fino)',
-  '18K (Ley 750)',
-  '14K (Ley 585)',
-  'Ley 900',
-  'Fundición / Barra',
-  'Chatarra / Joyería',
-  'Otra / A verificar',
-];
 
 export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: (reg: Registro) => void }) {
-  // Operación: ENTREGA o RECEPCIÓN
   const [tipoOperacion, setTipoOperacion] = useState<TipoOperacion>('ENTREGA');
-  // Categoría: ORO, DINERO, MATERIAL, MIXTO
   const [categoria, setCategoria] = useState<CategoriaOperacion>('ORO');
   
-  // Fecha y ubicación
   const [fechaHora, setFechaHora] = useState<string>(() => new Date().toISOString().slice(0, 16));
   const [ubicacion, setUbicacion] = useState<UbicacionData>({ sede: '', proyecto: '' });
 
-  // Módulo de Oro
+  // Módulo de Oro (Gramos y Liquidación)
   const [oroGramos, setOroGramos] = useState<string>('');
   const [oroLiquidacion, setOroLiquidacion] = useState<string>('');
   const [oroPrecioGramo, setOroPrecioGramo] = useState<string>('');
   const [oroMoneda, setOroMoneda] = useState<string>('COP');
-  const [oroLey, setOroLey] = useState<string>('18K (Ley 750)');
   const [oroTipoPieza, setOroTipoPieza] = useState<string>('');
   const [oroObservaciones, setOroObservaciones] = useState<string>('');
 
@@ -96,11 +83,12 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
   // Observaciones Generales
   const [observaciones, setObservaciones] = useState<string>('');
 
-  // Control de estado
+  // Estados de control
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [savedRegistro, setSavedRegistro] = useState<Registro | null>(null);
+  const [borradorToShare, setBorradorToShare] = useState<Partial<BorradorRemoto> | null>(null);
 
-  // Cálculo asistido entre Gramos, Precio x Gramo y Liquidación
+  // Cálculo asistido
   const handleGramosChange = (val: string) => {
     setOroGramos(val);
     const g = parseFloat(val) || 0;
@@ -128,7 +116,6 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
     }
   };
 
-  // Capturar GPS
   const handleGetLocation = () => {
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
@@ -144,7 +131,55 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
     }
   };
 
-  // Envío del Formulario
+  // Preparar borrador para compartir por WhatsApp
+  const handleShareDraft = () => {
+    const folio = generateFolio(tipoOperacion);
+    const parsedGramos = parseFloat(oroGramos) || 0;
+    const parsedLiquidacion = parseFloat(oroLiquidacion) || 0;
+    const parsedPrecioG = parseFloat(oroPrecioGramo) || 0;
+    const parsedMontoDinero = parseFloat(montoDinero) || 0;
+
+    const cleanedMateriales = (categoria === 'MATERIAL' || categoria === 'MIXTO')
+      ? materiales.filter((m) => m.descripcion.trim().length > 0 || (m.cantidad && m.cantidad > 0))
+      : [];
+
+    const draftData: Partial<BorradorRemoto> = {
+      id: generateId(),
+      folio,
+      tipoOperacion,
+      categoria,
+      fechaHora: new Date(fechaHora).toISOString(),
+      ubicacion: ubicacion.sede || ubicacion.proyecto ? ubicacion : undefined,
+      entregaPor: entregaPor.nombre || entregaPor.documento ? entregaPor : undefined,
+      recibePor: recibePor.nombre || recibePor.documento ? recibePor : undefined,
+      oro: (categoria === 'ORO' || categoria === 'MIXTO') && (parsedGramos > 0 || parsedLiquidacion > 0) ? {
+        gramos: parsedGramos,
+        valorLiquidacion: parsedLiquidacion,
+        precioPorGramo: parsedPrecioG > 0 ? parsedPrecioG : undefined,
+        moneda: oroMoneda,
+        tipoPieza: oroTipoPieza || undefined,
+        observaciones: oroObservaciones || undefined,
+      } : undefined,
+      dinero: (categoria === 'DINERO' || categoria === 'MIXTO') && parsedMontoDinero > 0 ? {
+        monto: parsedMontoDinero,
+        moneda: monedaDinero,
+        metodoPago,
+        concepto: conceptoDinero || undefined,
+        numeroComprobante: numeroComprobante || undefined,
+      } : undefined,
+      materiales: cleanedMateriales.length > 0 ? cleanedMateriales : undefined,
+      firmaEmisor: (tipoOperacion === 'ENTREGA' ? firmaEntrega : firmaRecibe) ? {
+        base64: tipoOperacion === 'ENTREGA' ? firmaEntrega : firmaRecibe,
+        fechaFirma: new Date().toISOString(),
+      } : undefined,
+      fotosEmisor: fotos.length > 0 ? fotos : undefined,
+      parteAFirmar: tipoOperacion === 'ENTREGA' ? 'RECEPCION' : 'ENTREGA',
+    };
+
+    setBorradorToShare(draftData);
+  };
+
+  // Envío Directo
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -170,18 +205,15 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
         entregaPor: entregaPor.nombre || entregaPor.documento ? entregaPor : undefined,
         recibePor: recibePor.nombre || recibePor.documento ? recibePor : undefined,
         
-        // Datos de Oro
         oro: (categoria === 'ORO' || categoria === 'MIXTO') && (parsedGramos > 0 || parsedLiquidacion > 0) ? {
           gramos: parsedGramos,
           valorLiquidacion: parsedLiquidacion,
           precioPorGramo: parsedPrecioG > 0 ? parsedPrecioG : (parsedGramos > 0 ? Math.round(parsedLiquidacion / parsedGramos) : undefined),
           moneda: oroMoneda,
-          leyPureza: oroLey,
           tipoPieza: oroTipoPieza || undefined,
           observaciones: oroObservaciones || undefined,
         } : undefined,
 
-        // Datos de Dinero
         dinero: (categoria === 'DINERO' || categoria === 'MIXTO') && parsedMontoDinero > 0 ? {
           monto: parsedMontoDinero,
           moneda: monedaDinero,
@@ -201,13 +233,9 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
         actualizadoEn: new Date().toISOString(),
       };
 
-      // Guardar internamente en el dispositivo/Vercel
       saveRegistro(newRegistro);
-
-      // Enviar silenciosamente la copia en PDF a Drive
       sendPdfToDrive(newRegistro);
 
-      // Lanzar confeti de éxito
       try {
         confetti({
           particleCount: 70,
@@ -219,7 +247,7 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
       setSavedRegistro(newRegistro);
       if (onRegistroCreado) onRegistroCreado(newRegistro);
 
-      // Resetear campos
+      // Reset
       setOroGramos('');
       setOroLiquidacion('');
       setOroPrecioGramo('');
@@ -247,10 +275,10 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
       <div className="p-5 sm:p-6 bg-slate-950 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2">
-            <span>Registro de Movimiento</span>
+            <span>Nuevo Registro</span>
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Genera el acta oficial de entrega o recepción con fotografía y firmas.
+            Diligencia los datos para emitir el acta o compartir para firma por WhatsApp.
           </p>
         </div>
 
@@ -284,7 +312,7 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
         </div>
       </div>
 
-      {/* Selector de Tipo de Bien / Categoría */}
+      {/* Selector de Categoría */}
       <div className="px-6 pt-5 pb-2 border-b border-slate-100 dark:border-slate-800 flex flex-wrap gap-2">
         <button
           type="button"
@@ -322,7 +350,7 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
           }`}
         >
           <Package className="w-4 h-4" />
-          <span>Materiales / Equipos</span>
+          <span>Materiales</span>
         </button>
 
         <button
@@ -350,9 +378,6 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
                 <Coins className="w-4 h-4 text-amber-600" />
                 <span>Detalle de Oro ({isEntrega ? 'Entrega de Oro' : 'Recepción de Oro'})</span>
               </h3>
-              <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">
-                Gramos & Liquidación
-              </span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
@@ -378,7 +403,7 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
               </div>
 
               {/* Valor Liquidación */}
-              <div className="sm:col-span-4">
+              <div className="sm:col-span-5">
                 <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
                   Valor de Liquidación ($)
                 </label>
@@ -396,11 +421,11 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
                 </div>
               </div>
 
-              {/* Precio por Gramo (Opcional) */}
-              <div className="sm:col-span-4">
+              {/* Precio por Gramo */}
+              <div className="sm:col-span-3">
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
                   <Calculator className="w-3 h-3 text-slate-400" />
-                  <span>Precio por Gramo</span>
+                  <span>Precio/g</span>
                 </label>
                 <input
                   type="number"
@@ -413,40 +438,22 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
                 />
               </div>
 
-              {/* Ley / Pureza */}
-              <div className="sm:col-span-4">
+              {/* Presentación / Tipo de Pieza */}
+              <div className="sm:col-span-6">
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Ley / Pureza
-                </label>
-                <select
-                  value={oroLey}
-                  onChange={(e) => setOroLey(e.target.value)}
-                  className="w-full px-3 py-2 text-xs sm:text-sm font-medium rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                >
-                  {LEYES_ORO.map((ley) => (
-                    <option key={ley} value={ley}>
-                      {ley}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Tipo de Pieza */}
-              <div className="sm:col-span-4">
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Tipo de Pieza / Presentación
+                  Presentación / Detalle de la Pieza (Opcional)
                 </label>
                 <input
                   type="text"
                   value={oroTipoPieza}
                   onChange={(e) => setOroTipoPieza(e.target.value)}
-                  placeholder="Ej. Lingote, Chatarra, Joyas, Barra..."
+                  placeholder="Ej. Lingote, Barra, Chatarra, Joyería..."
                   className="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
                 />
               </div>
 
               {/* Moneda */}
-              <div className="sm:col-span-4">
+              <div className="sm:col-span-6">
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                   Moneda
                 </label>
@@ -660,7 +667,7 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
           </div>
         </section>
 
-        {/* 7. SECCIÓN: FECHA, SEDE & OBSERVACIONES */}
+        {/* 7. SECCIÓN: FECHA & SEDE */}
         <section className="grid grid-cols-1 sm:grid-cols-12 gap-3 pt-2">
           <div className="sm:col-span-4">
             <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
@@ -683,7 +690,7 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
                 type="text"
                 value={ubicacion.sede || ''}
                 onChange={(e) => setUbicacion({ ...ubicacion, sede: e.target.value })}
-                placeholder="Ej. Oficina, Almacén..."
+                placeholder="Ej. Sede Central, Almacén..."
                 className="w-full pl-3 pr-7 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
               />
               <button
@@ -710,12 +717,21 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
           </div>
         </section>
 
-        {/* Botón Guardar */}
-        <div className="pt-2">
+        {/* Botones de Acción Dual: Emitir Inmediato o Compartir por WhatsApp */}
+        <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={handleShareDraft}
+            className="py-3.5 px-4 rounded-2xl bg-green-600 hover:bg-green-500 text-white font-extrabold text-xs sm:text-sm shadow-md active:scale-98 transition-all flex items-center justify-center gap-2"
+          >
+            <Share2 className="w-4 h-4" />
+            <span>Compartir para Firma por WhatsApp</span>
+          </button>
+
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full py-3.5 px-6 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm shadow-md hover:shadow-lg active:scale-98 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            className="py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs sm:text-sm shadow-md active:scale-98 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {isSubmitting ? (
               <>
@@ -725,14 +741,22 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
             ) : (
               <>
                 <FileCheck2 className="w-5 h-5" />
-                <span>Guardar y Emitir Acta de {tipoOperacion}</span>
+                <span>Guardar y Emitir Acta Inmediata</span>
               </>
             )}
           </button>
         </div>
       </form>
 
-      {/* Modal de Comprobante */}
+      {/* Modal de Compartir por WhatsApp */}
+      {borradorToShare && (
+        <ShareWhatsAppModal
+          borradorData={borradorToShare}
+          onClose={() => setBorradorToShare(null)}
+        />
+      )}
+
+      {/* Modal de Comprobante / Acta */}
       {savedRegistro && (
         <ReceiptModal
           registro={savedRegistro}
