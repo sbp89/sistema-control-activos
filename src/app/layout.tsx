@@ -3,8 +3,8 @@ import './globals.css';
 import Navbar from '@/components/Navbar';
 
 export const metadata: Metadata = {
-  title: 'Sistema de Control de Activos | Entrega & Recepción',
-  description: 'Sistema oficial para registro, custodia y actas de entrega/recepción de dinero y materiales con respaldo en Google Drive (Trabajo/Mono).',
+  title: 'Control de Custodia | Entrega y Recepción',
+  description: 'Sistema oficial para registro y actas de entrega/recepción de oro, dinero y materiales.',
 };
 
 export default function RootLayout({
@@ -14,17 +14,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es">
-      <body className="antialiased flex flex-col min-h-screen">
+      <body className="antialiased flex flex-col min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
         <Navbar />
-        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6">
           {children}
         </main>
-        <footer className="border-t border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 py-6 text-center text-xs text-slate-500">
-          <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-            <span>Sistema de Control y Custodia de Activos &copy; 2026</span>
-            <span className="text-emerald-600 font-medium">
-              Almacenamiento en Google Drive: <code className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">Trabajo/Mono</code>
-            </span>
+        <footer className="border-t border-slate-200 dark:border-slate-800 py-4 text-center text-xs text-slate-400">
+          <div className="max-w-5xl mx-auto px-4">
+            Sistema de Control de Custodia &copy; 2026
           </div>
         </footer>
       </body>

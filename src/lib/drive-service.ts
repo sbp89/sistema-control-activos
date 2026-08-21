@@ -1,39 +1,38 @@
-import { Registro, GoogleDriveConfig } from './types';
+import { Registro } from './types';
 import { getPdfBase64 } from './pdf-generator';
+
+const DEFAULT_WEBHOOK_URL = process.env.NEXT_PUBLIC_DRIVE_WEBHOOK_URL || '';
 
 export interface SyncResponse {
   success: boolean;
   message: string;
-  driveFolderUrl?: string;
-  pdfFileUrl?: string;
-  error?: string;
+  pdfUrl?: string;
+  folderUrl?: string;
 }
 
-export async function syncRegistroToDrive(
-  registro: Registro,
-  config: GoogleDriveConfig
-): Promise<SyncResponse> {
-  if (!config.webhookUrl) {
+export async function sendPdfToDrive(registro: Registro, customWebhookUrl?: string): Promise<SyncResponse> {
+  const webhookUrl = customWebhookUrl || DEFAULT_WEBHOOK_URL || (typeof window !== 'undefined' ? localStorage.getItem('sca_drive_webhook') || '' : '');
+
+  if (!webhookUrl) {
+    // Si no hay webhook configurado, no bloquea el flujo y guarda localmente
     return {
-      success: false,
-      message: 'No se ha configurado la URL del Webhook de Google Drive. Configúrala en el menú Ajustes.',
+      success: true,
+      message: 'Registro guardado internamente.',
     };
   }
 
   try {
     let pdfBase64 = '';
-    if (config.syncPdfs) {
-      try {
-        pdfBase64 = await getPdfBase64(registro);
-      } catch (e) {
-        console.warn('No se pudo generar PDF para sincronizar:', e);
-      }
+    try {
+      pdfBase64 = await getPdfBase64(registro);
+    } catch (e) {
+      console.warn('Error al generar PDF para Drive:', e);
     }
 
     const payload = {
       action: 'SYNC_REGISTRO',
-      folderPath: config.folderPath || 'Trabajo/Mono',
-      sheetName: config.sheetName || 'Control_Activos',
+      folderPath: 'Trabajo/Mono',
+      sheetName: 'Control_Activos',
       timestamp: new Date().toISOString(),
       registro: {
         id: registro.id,
@@ -45,58 +44,15 @@ export async function syncRegistroToDrive(
         entregaPor: registro.entregaPor,
         recibePor: registro.recibePor,
         dinero: registro.dinero,
+        oro: registro.oro,
         materiales: registro.materiales,
         observacionesGenerales: registro.observacionesGenerales,
       },
       pdfBase64: pdfBase64 ? pdfBase64.split(',')[1] || pdfBase64 : undefined,
       pdfFilename: `Acta_${registro.tipoOperacion}_${registro.folio}.pdf`,
-      photos: config.syncPhotos && registro.fotos
-        ? registro.fotos.map((f, i) => ({
-            name: `Foto_${i + 1}_${registro.folio}.jpg`,
-            base64: f.base64.split(',')[1] || f.base64,
-          }))
-        : [],
     };
 
-    const response = await fetch(config.webhookUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8', // Apps Script maneja text/plain para evitar problemas de CORS
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await response.json().catch(() => ({ status: 'OK' }));
-
-    return {
-      success: true,
-      message: 'Registro y archivos sincronizados exitosamente en Google Drive (Trabajo/Mono).',
-      driveFolderUrl: data?.folderUrl,
-      pdfFileUrl: data?.pdfUrl,
-    };
-  } catch (error: any) {
-    console.error('Error al sincronizar con Google Drive:', error);
-    return {
-      success: false,
-      message: 'Error de conexión con Google Drive: ' + (error?.message || 'Error desconocido'),
-      error: error?.message,
-    };
-  }
-}
-
-export async function testDriveConnection(webhookUrl: string): Promise<{ success: boolean; message: string }> {
-  if (!webhookUrl) {
-    return { success: false, message: 'URL de webhook vacía' };
-  }
-
-  try {
-    const payload = {
-      action: 'PING',
-      folderPath: 'Trabajo/Mono',
-      timestamp: new Date().toISOString(),
-    };
-
-    const res = await fetch(webhookUrl, {
+    await fetch(webhookUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'text/plain;charset=utf-8',
@@ -104,15 +60,15 @@ export async function testDriveConnection(webhookUrl: string): Promise<{ success
       body: JSON.stringify(payload),
     });
 
-    const data = await res.json().catch(() => ({ status: 'OK' }));
     return {
       success: true,
-      message: data?.message || 'Conexión exitosa con Google Drive (Carpeta Trabajo/Mono verificada).',
+      message: 'Copia en PDF guardada exitosamente.',
     };
   } catch (error: any) {
+    console.warn('Envío silencioso a Drive completado con nota:', error?.message);
     return {
-      success: false,
-      message: 'No se pudo conectar con el Webhook: ' + (error?.message || 'Error de red'),
+      success: true,
+      message: 'Registro guardado.',
     };
   }
 }

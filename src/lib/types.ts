@@ -1,40 +1,43 @@
 export type TipoOperacion = 'ENTREGA' | 'RECEPCION';
 
-export type CategoriaOperacion = 'DINERO' | 'MATERIAL' | 'MIXTO';
+export type CategoriaOperacion = 'DINERO' | 'ORO' | 'MATERIAL' | 'MIXTO';
 
 export type MetodoPago = 'EFECTIVO' | 'TRANSFERENCIA' | 'CHEQUE' | 'CONSIGNACION' | 'OTRO';
 
 export type EstadoMaterial = 'NUEVO' | 'BUENO' | 'USADO' | 'REGULAR' | 'CON_DETALLES' | 'DANADO';
 
+export interface DetalleOro {
+  gramos: number;
+  valorLiquidacion: number;
+  precioPorGramo?: number;
+  moneda?: string; // 'COP', 'USD', etc.
+  leyPureza?: string; // '24K (Puro)', '18K (750)', '14K', 'Ley 900', 'Fundición', 'Chatarra', etc.
+  tipoPieza?: string; // 'Lingote', 'Barra', 'Chatarra', 'Joyas', 'Lámina', 'Granalla'
+  observaciones?: string;
+}
+
 export interface ItemMaterial {
   id: string;
   descripcion: string;
   cantidad: number;
-  unidad: string; // 'unidad', 'kg', 'metros', 'cajas', 'juegos', 'piezas', 'paquetes'
+  unidad: string; // 'unidad', 'kg', 'metros', 'cajas', etc.
   estado?: EstadoMaterial;
   numeroSerie?: string;
   codigoInventario?: string;
   observaciones?: string;
 }
 
-export interface Denominacion {
-  valor: number;
-  cantidad: number;
-  total: number;
-}
-
 export interface DetalleDinero {
   monto: number;
-  moneda: string; // 'COP', 'USD', 'EUR', 'MXN', etc.
+  moneda: string;
   metodoPago: MetodoPago | string;
   concepto?: string;
-  numeroComprobante?: string; // Número de transferencia, cheque o recibo manual
-  denominaciones?: Denominacion[];
+  numeroComprobante?: string;
 }
 
 export interface Participante {
   nombre?: string;
-  documento?: string; // Cédula, DNI, Pasaporte, NIT
+  documento?: string;
   cargoEmpresa?: string;
   telefono?: string;
 }
@@ -73,10 +76,9 @@ export interface Registro {
   entregaPor?: Participante;
   recibePor?: Participante;
 
-  // Datos de Dinero (si aplica)
+  // Datos específicos por categoría
   dinero?: DetalleDinero;
-
-  // Datos de Material (si aplica)
+  oro?: DetalleOro;
   materiales?: ItemMaterial[];
 
   // Evidencias fotográficas y firmas
@@ -84,33 +86,21 @@ export interface Registro {
   firmaEntrega?: FirmaDigital;
   firmaRecibe?: FirmaDigital;
 
-  // Observaciones y estado
+  // Observaciones
   observacionesGenerales?: string;
   clausulaAceptada?: boolean;
   sincronizadoDrive?: boolean;
-  driveFileUrl?: string;
   creadoEn: string;
   actualizadoEn: string;
 }
 
 export interface GoogleDriveConfig {
   webhookUrl: string;
-  folderPath: string; // Por defecto 'Trabajo/Mono'
-  sheetName: string; // Por defecto 'Control_Activos'
+  folderPath: string;
+  sheetName: string;
   autoSync: boolean;
   syncPhotos: boolean;
   syncPdfs: boolean;
-  ultimoSync?: string;
-}
-
-export interface FiltrosHistorial {
-  busqueda: string;
-  tipoOperacion: 'TODOS' | TipoOperacion;
-  categoria: 'TODOS' | CategoriaOperacion;
-  fechaDesde?: string;
-  fechaHasta?: string;
-  moneda?: string;
-  estadoSync?: 'TODOS' | 'SINCRONIZADO' | 'PENDIENTE';
 }
 
 export interface ResumenEstadisticas {
@@ -119,6 +109,8 @@ export interface ResumenEstadisticas {
   totalRecepciones: number;
   totalDineroEntregado: Record<string, number>;
   totalDineroRecibido: Record<string, number>;
+  totalOroGramosEntregados: number;
+  totalOroGramosRecibidos: number;
   totalMaterialesEntregados: number;
   totalMaterialesRecibidos: number;
 }

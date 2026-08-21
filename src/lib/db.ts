@@ -12,8 +12,40 @@ export const DEFAULT_DRIVE_CONFIG: GoogleDriveConfig = {
   syncPdfs: true,
 };
 
-// Datos de ejemplo para primera carga
 const DEMO_REGISTROS: Registro[] = [
+  {
+    id: 'demo-oro',
+    folio: 'ENT-20260821-3012',
+    tipoOperacion: 'ENTREGA',
+    categoria: 'ORO',
+    fechaHora: new Date(Date.now() - 3600000 * 2).toISOString(),
+    ubicacion: {
+      sede: 'Sede Principal',
+      proyecto: 'Custodia Minera',
+    },
+    entregaPor: {
+      nombre: 'Alejandro Morales',
+      documento: 'CC 1098234710',
+    },
+    recibePor: {
+      nombre: 'Javier Restrepo',
+      documento: 'CC 71294801',
+    },
+    oro: {
+      gramos: 48.50,
+      valorLiquidacion: 16975000,
+      precioPorGramo: 350000,
+      moneda: 'COP',
+      leyPureza: '18K (Ley 750)',
+      tipoPieza: 'Barra Fundida',
+      observaciones: 'Sellada con precinto #ORO-881',
+    },
+    observacionesGenerales: 'Entrega de material aurífero pesado en balanza calibrada.',
+    clausulaAceptada: true,
+    sincronizadoDrive: true,
+    creadoEn: new Date(Date.now() - 3600000 * 2).toISOString(),
+    actualizadoEn: new Date(Date.now() - 3600000 * 2).toISOString(),
+  },
   {
     id: 'demo-1',
     folio: 'ENT-20260821-1042',
@@ -197,8 +229,18 @@ export function getEstadisticas(registros?: Registro[]): ResumenEstadisticas {
 
   let totalMaterialesEntregados = 0;
   let totalMaterialesRecibidos = 0;
+  let totalOroGramosEntregados = 0;
+  let totalOroGramosRecibidos = 0;
 
   list.forEach((reg) => {
+    if (reg.oro && reg.oro.gramos > 0) {
+      if (reg.tipoOperacion === 'ENTREGA') {
+        totalOroGramosEntregados += Number(reg.oro.gramos) || 0;
+      } else {
+        totalOroGramosRecibidos += Number(reg.oro.gramos) || 0;
+      }
+    }
+
     if (reg.dinero && reg.dinero.monto > 0) {
       const mon = reg.dinero.moneda || 'COP';
       if (reg.tipoOperacion === 'ENTREGA') {
@@ -224,6 +266,8 @@ export function getEstadisticas(registros?: Registro[]): ResumenEstadisticas {
     totalRecepciones: recepciones.length,
     totalDineroEntregado,
     totalDineroRecibido,
+    totalOroGramosEntregados,
+    totalOroGramosRecibidos,
     totalMaterialesEntregados,
     totalMaterialesRecibidos,
   };

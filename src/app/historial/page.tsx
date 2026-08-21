@@ -4,26 +4,19 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   History, 
   Search, 
-  Filter, 
-  Download, 
   FileSpreadsheet, 
   Eye, 
   Trash2, 
-  Cloud, 
-  CheckCircle2, 
-  RefreshCw, 
+  Download, 
+  Coins, 
   DollarSign, 
   Package, 
-  FileText,
-  Calendar,
-  Layers,
-  ArrowUpDown
+  FileText 
 } from 'lucide-react';
 import { Registro, TipoOperacion, CategoriaOperacion } from '@/lib/types';
-import { getStoredRegistros, deleteRegistro, getGoogleDriveConfig, saveRegistro } from '@/lib/db';
+import { getStoredRegistros, deleteRegistro } from '@/lib/db';
 import { formatDate, formatMoney } from '@/lib/utils';
 import { downloadActaPdf } from '@/lib/pdf-generator';
-import { syncRegistroToDrive } from '@/lib/drive-service';
 import ReceiptModal from '@/components/ReceiptModal';
 
 export default function HistorialPage() {
@@ -33,11 +26,7 @@ export default function HistorialPage() {
   const [catFiltro, setCatFiltro] = useState<'TODOS' | CategoriaOperacion>('TODOS');
   const [fechaDesde, setFechaDesde] = useState('');
   const [fechaHasta, setFechaHasta] = useState('');
-  const [syncFiltro, setSyncFiltro] = useState<'TODOS' | 'SYNC' | 'PENDIENTE'>('TODOS');
-
   const [selectedRegistro, setSelectedRegistro] = useState<Registro | null>(null);
-  const [isBulkSyncing, setIsBulkSyncing] = useState(false);
-  const [bulkSyncMsg, setBulkSyncMsg] = useState<string | null>(null);
 
   const loadData = () => {
     setRegistros(getStoredRegistros());
@@ -47,68 +36,39 @@ export default function HistorialPage() {
     loadData();
   }, []);
 
-  // Filtrado reactivo en memoria
   const filteredRegistros = useMemo(() => {
     return registros.filter((reg) => {
-      // 1. Búsqueda por texto
       if (searchTerm.trim()) {
-        const query = searchTerm.toLowerCase();
-        const matchFolio = reg.folio.toLowerCase().includes(query);
-        const matchEntregado = reg.entregaPor?.nombre?.toLowerCase().includes(query) ||
-                               reg.entregaPor?.documento?.toLowerCase().includes(query);
-        const matchRecibido = reg.recibePor?.nombre?.toLowerCase().includes(query) ||
-                              reg.recibePor?.documento?.toLowerCase().includes(query);
-        const matchConcepto = reg.dinero?.concepto?.toLowerCase().includes(query);
-        const matchSede = reg.ubicacion?.sede?.toLowerCase().includes(query) ||
-                          reg.ubicacion?.proyecto?.toLowerCase().includes(query);
-        const matchMateriales = reg.materiales?.some((m) =>
-          m.descripcion.toLowerCase().includes(query) ||
-          m.numeroSerie?.toLowerCase().includes(query) ||
-          m.codigoInventario?.toLowerCase().includes(query)
-        );
+        const q = searchTerm.toLowerCase();
+        const mFolio = reg.folio.toLowerCase().includes(q);
+        const mEnt = reg.entregaPor?.nombre?.toLowerCase().includes(q) || reg.entregaPor?.documento?.toLowerCase().includes(q);
+        const mRec = reg.recibePor?.nombre?.toLowerCase().includes(q) || reg.recibePor?.documento?.toLowerCase().includes(q);
+        const mConc = reg.dinero?.concepto?.toLowerCase().includes(q) || reg.oro?.tipoPieza?.toLowerCase().includes(q);
+        const mMat = reg.materiales?.some((m) => m.descripcion.toLowerCase().includes(q) || m.numeroSerie?.toLowerCase().includes(q));
 
-        if (!matchFolio && !matchEntregado && !matchRecibido && !matchConcepto && !matchSede && !matchMateriales) {
-          return false;
-        }
+        if (!mFolio && !mEnt && !mRec && !mConc && !mMat) return false;
       }
 
-      // 2. Filtro Tipo de Operación
-      if (tipoFiltro !== 'TODOS' && reg.tipoOperacion !== tipoFiltro) {
-        return false;
-      }
+      if (tipoFiltro !== 'TODOS' && reg.tipoOperacion !== tipoFiltro) return false;
+      if (catFiltro !== 'TODOS' && reg.categoria !== catFiltro) return false;
 
-      // 3. Filtro Categoría
-      if (catFiltro !== 'TODOS' && reg.categoria !== catFiltro) {
-        return false;
-      }
-
-      // 4. Filtro Fechas
-      if (fechaDesde && new Date(reg.fechaHora) < new Date(fechaDesde)) {
-        return false;
-      }
-      if (fechaHasta && new Date(reg.fechaHora) > new Date(fechaHasta + 'T23:59:59')) {
-        return false;
-      }
-
-      // 5. Filtro Drive Sync
-      if (syncFiltro === 'SYNC' && !reg.sincronizadoDrive) return false;
-      if (syncFiltro === 'PENDIENTE' && reg.sincronizadoDrive) return false;
+      if (fechaDesde && new Date(reg.fechaHora) < new Date(fechaDesde)) return false;
+      if (fechaHasta && new Date(reg.fechaHora) > new Date(fechaHasta + 'T23:59:59')) return false;
 
       return true;
     });
-  }, [registros, searchTerm, tipoFiltro, catFiltro, fechaDesde, fechaHasta, syncFiltro]);
+  }, [registros, searchTerm, tipoFiltro, catFiltro, fechaDesde, fechaHasta]);
 
   const handleDelete = (id: string, folio: string) => {
-    if (confirm(`¿Estás seguro de eliminar el registro ${folio}? Esta acción no se puede deshacer.`)) {
+    if (confirm(`¿Eliminar el registro ${folio}?`)) {
       deleteRegistro(id);
       loadData();
     }
   };
 
-  // Exportar a Excel (CSV con UTF-8 BOM para apertura perfecta con acentos)
   const handleExportCsv = () => {
     if (filteredRegistros.length === 0) {
-      alert('No hay registros para exportar con los filtros actuales.');
+      alert('No hay registros para exportar.');
       return;
     }
 
@@ -117,19 +77,15 @@ export default function HistorialPage() {
       'Tipo Operación',
       'Categoría',
       'Fecha / Hora',
-      'Sede / Proyecto',
+      'Sede',
       'Entregado Por',
-      'Doc Entregó',
       'Recibido Por',
-      'Doc Recibió',
+      'Oro (Gramos)',
+      'Oro (Liquidación)',
       'Monto Dinero',
-      'Moneda',
       'Método Pago',
-      'Concepto Dinero',
-      'Total Materiales',
-      'Detalle Materiales',
+      'Materiales',
       'Observaciones',
-      'Sincronizado Drive',
     ];
 
     const rows = filteredRegistros.map((r) => [
@@ -137,19 +93,15 @@ export default function HistorialPage() {
       r.tipoOperacion,
       r.categoria,
       formatDate(r.fechaHora, true),
-      `${r.ubicacion?.sede || ''} ${r.ubicacion?.proyecto || ''}`.trim(),
+      r.ubicacion?.sede || '',
       r.entregaPor?.nombre || 'Confidencial',
-      r.entregaPor?.documento || '',
       r.recibePor?.nombre || 'Confidencial',
-      r.recibePor?.documento || '',
+      r.oro ? r.oro.gramos : '',
+      r.oro ? r.oro.valorLiquidacion : '',
       r.dinero ? r.dinero.monto : '',
-      r.dinero ? r.dinero.moneda : '',
       r.dinero ? r.dinero.metodoPago : '',
-      r.dinero?.concepto || '',
-      r.materiales ? r.materiales.length : 0,
       r.materiales ? r.materiales.map((m) => `${m.cantidad} ${m.unidad} ${m.descripcion}`).join('; ') : '',
       r.observacionesGenerales || '',
-      r.sincronizadoDrive ? 'SI' : 'NO',
     ]);
 
     const csvContent = '\uFEFF' + [
@@ -160,326 +112,164 @@ export default function HistorialPage() {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `Control_Activos_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
+    link.href = url;
+    link.download = `Historial_Actas_${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
-    document.body.removeChild(link);
-  };
-
-  // Sincronización masiva de registros pendientes a Google Drive (Trabajo/Mono)
-  const handleBulkSyncDrive = async () => {
-    const config = getGoogleDriveConfig();
-    if (!config.webhookUrl) {
-      alert('Debes configurar la URL de tu Webhook de Google Drive en la sección de Ajustes primero.');
-      return;
-    }
-
-    const pendientes = registros.filter((r) => !r.sincronizadoDrive);
-    if (pendientes.length === 0) {
-      alert('Todos los registros ya se encuentran sincronizados con Google Drive.');
-      return;
-    }
-
-    setIsBulkSyncing(true);
-    setBulkSyncMsg(`Sincronizando ${pendientes.length} registros con la carpeta Trabajo/Mono en Google Drive...`);
-
-    let syncedCount = 0;
-    for (const reg of pendientes) {
-      const res = await syncRegistroToDrive(reg, config);
-      if (res.success) {
-        const updated = { ...reg, sincronizadoDrive: true, driveFileUrl: res.driveFolderUrl };
-        saveRegistro(updated);
-        syncedCount++;
-      }
-    }
-
-    setIsBulkSyncing(false);
-    setBulkSyncMsg(`¡Listo! Se sincronizaron ${syncedCount} de ${pendientes.length} registros en Drive (Trabajo/Mono).`);
-    loadData();
-    setTimeout(() => setBulkSyncMsg(null), 5000);
   };
 
   return (
-    <div className="space-y-6">
-      {/* Encabezado y Acciones Principales */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="max-w-5xl mx-auto space-y-5">
+      {/* Encabezado */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
-            <History className="w-7 h-7 text-emerald-600" />
-            <span>Historial de Actas & Movimientos</span>
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+            <History className="w-6 h-6 text-emerald-600" />
+            <span>Historial de Actas</span>
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Consulta, filtra, descarga actas oficiales en PDF y sincroniza con Google Drive (Trabajo/Mono).
+          <p className="text-xs text-slate-500">
+            Consulta, descarga actas en PDF o exporta a Excel.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            onClick={handleExportCsv}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-sm transition-all"
-            title="Exportar a Excel / CSV con formato compatible"
-          >
-            <FileSpreadsheet className="w-4 h-4" />
-            <span>Exportar Excel</span>
-          </button>
-
-          <button
-            onClick={handleBulkSyncDrive}
-            disabled={isBulkSyncing}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-bold shadow-sm transition-all disabled:opacity-50"
-          >
-            {isBulkSyncing ? (
-              <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
-            ) : (
-              <Cloud className="w-4 h-4 text-emerald-400" />
-            )}
-            <span>{isBulkSyncing ? 'Sincronizando...' : 'Sincronizar Pendientes a Drive'}</span>
-          </button>
-        </div>
+        <button
+          onClick={handleExportCsv}
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-sm self-start sm:self-auto"
+        >
+          <FileSpreadsheet className="w-4 h-4" />
+          <span>Exportar a Excel</span>
+        </button>
       </div>
 
-      {/* Banner de Mensaje de Sincronización Masiva */}
-      {bulkSyncMsg && (
-        <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs font-medium text-emerald-900 dark:text-emerald-200 flex items-center gap-2 animate-in fade-in">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-          <span>{bulkSyncMsg}</span>
-        </div>
-      )}
-
-      {/* Barra de Búsqueda y Filtros */}
-      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-          {/* Búsqueda */}
-          <div className="md:col-span-4 relative">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+      {/* Barra de Filtros */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+          <div className="sm:col-span-4 relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar por folio, nombre, cédula, serial, concepto..."
-              className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              placeholder="Buscar por folio, nombre, concepto..."
+              className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none"
             />
           </div>
 
-          {/* Tipo de Operación */}
-          <div className="md:col-span-2">
+          <div className="sm:col-span-3">
             <select
               value={tipoFiltro}
               onChange={(e) => setTipoFiltro(e.target.value as any)}
-              className="w-full px-3 py-2 text-xs sm:text-sm font-semibold rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none"
             >
               <option value="TODOS">Todos los Tipos</option>
-              <option value="ENTREGA">Solo Entregas</option>
-              <option value="RECEPCION">Solo Recepciones</option>
+              <option value="ENTREGA">Entregas</option>
+              <option value="RECEPCION">Recepciones</option>
             </select>
           </div>
 
-          {/* Categoría */}
-          <div className="md:col-span-2">
+          <div className="sm:col-span-3">
             <select
               value={catFiltro}
               onChange={(e) => setCatFiltro(e.target.value as any)}
-              className="w-full px-3 py-2 text-xs sm:text-sm font-semibold rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none"
             >
               <option value="TODOS">Todas las Categorías</option>
+              <option value="ORO">Oro</option>
               <option value="DINERO">Dinero</option>
               <option value="MATERIAL">Materiales</option>
-              <option value="MIXTO">Mixto (Ambos)</option>
+              <option value="MIXTO">Mixto</option>
             </select>
           </div>
 
-          {/* Rango Desde */}
-          <div className="md:col-span-2">
+          <div className="sm:col-span-2">
             <input
               type="date"
               value={fechaDesde}
               onChange={(e) => setFechaDesde(e.target.value)}
-              className="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              className="w-full px-2 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none"
               title="Fecha inicial"
             />
           </div>
-
-          {/* Rango Hasta */}
-          <div className="md:col-span-2">
-            <input
-              type="date"
-              value={fechaHasta}
-              onChange={(e) => setFechaHasta(e.target.value)}
-              className="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-              title="Fecha final"
-            />
-          </div>
-        </div>
-
-        {/* Resumen de Filtros */}
-        <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100 dark:border-slate-800">
-          <span>
-            Mostrando <strong>{filteredRegistros.length}</strong> de {registros.length} registros
-          </span>
-          {(searchTerm || tipoFiltro !== 'TODOS' || catFiltro !== 'TODOS' || fechaDesde || fechaHasta) && (
-            <button
-              onClick={() => {
-                setSearchTerm('');
-                setTipoFiltro('TODOS');
-                setCatFiltro('TODOS');
-                setFechaDesde('');
-                setFechaHasta('');
-                setSyncFiltro('TODOS');
-              }}
-              className="text-emerald-600 hover:underline font-semibold"
-            >
-              Limpiar todos los filtros
-            </button>
-          )}
         </div>
       </div>
 
-      {/* Tabla Principal de Registros */}
-      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+      {/* Tabla de Registros */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
         {filteredRegistros.length === 0 ? (
-          <div className="p-12 text-center space-y-3">
-            <FileText className="w-12 h-12 text-slate-300 mx-auto" />
-            <p className="text-base font-bold text-slate-700 dark:text-slate-300">
-              No se encontraron registros
-            </p>
-            <p className="text-xs text-slate-500">
-              Prueba cambiando o limpiando los filtros de búsqueda.
-            </p>
+          <div className="p-8 text-center space-y-2">
+            <FileText className="w-10 h-10 text-slate-300 mx-auto" />
+            <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No hay registros</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs sm:text-sm">
-              <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-800">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-800">
                 <tr>
-                  <th className="p-3.5">Folio & Tipo</th>
-                  <th className="p-3.5">Fecha & Sede</th>
-                  <th className="p-3.5">Participantes</th>
-                  <th className="p-3.5">Valores / Materiales</th>
-                  <th className="p-3.5 text-center">Drive</th>
-                  <th className="p-3.5 text-right">Acciones</th>
+                  <th className="p-3">Folio</th>
+                  <th className="p-3">Tipo</th>
+                  <th className="p-3">Fecha</th>
+                  <th className="p-3">Participantes</th>
+                  <th className="p-3">Detalle (Oro / Dinero / Bienes)</th>
+                  <th className="p-3 text-right">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {filteredRegistros.map((reg) => {
                   const isEntrega = reg.tipoOperacion === 'ENTREGA';
                   return (
-                    <tr
-                      key={reg.id}
-                      className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
-                    >
-                      {/* Folio y Tipo */}
-                      <td className="p-3.5">
-                        <div className="space-y-1">
-                          <span
-                            className={`inline-block px-2 py-0.5 rounded text-[10px] font-extrabold uppercase ${
-                              isEntrega
-                                ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
-                                : 'bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300'
-                            }`}
-                          >
-                            {reg.tipoOperacion}
-                          </span>
-                          <div className="font-mono text-xs font-bold text-slate-900 dark:text-white">
-                            {reg.folio}
-                          </div>
-                        </div>
+                    <tr key={reg.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
+                      <td className="p-3 font-mono font-bold">{reg.folio}</td>
+                      <td className="p-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                          isEntrega ? 'bg-emerald-100 text-emerald-800' : 'bg-teal-100 text-teal-800'
+                        }`}>
+                          {reg.tipoOperacion}
+                        </span>
                       </td>
-
-                      {/* Fecha y Sede */}
-                      <td className="p-3.5">
-                        <div className="space-y-0.5">
-                          <div className="font-semibold text-slate-800 dark:text-slate-200">
-                            {formatDate(reg.fechaHora)}
-                          </div>
-                          {reg.ubicacion?.sede ? (
-                            <div className="text-xs text-slate-500">
-                              {reg.ubicacion.sede} {reg.ubicacion.proyecto ? `(${reg.ubicacion.proyecto})` : ''}
-                            </div>
-                          ) : (
-                            <div className="text-xs text-slate-400">Sede general</div>
-                          )}
-                        </div>
+                      <td className="p-3 text-slate-600 dark:text-slate-400">{formatDate(reg.fechaHora)}</td>
+                      <td className="p-3">
+                        <div><span className="text-emerald-600 font-semibold">De:</span> {reg.entregaPor?.nombre || 'Confidencial'}</div>
+                        <div><span className="text-teal-600 font-semibold">A:</span> {reg.recibePor?.nombre || 'Confidencial'}</div>
                       </td>
-
-                      {/* Participantes */}
-                      <td className="p-3.5">
-                        <div className="space-y-0.5 text-xs">
-                          <div className="text-slate-700 dark:text-slate-300">
-                            <span className="font-semibold text-emerald-600">Entregó:</span>{' '}
-                            {reg.entregaPor?.nombre || 'Confidencial'}
+                      <td className="p-3">
+                        {reg.oro && reg.oro.gramos > 0 && (
+                          <div className="font-bold text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                            <Coins className="w-3 h-3 text-amber-600" />
+                            {reg.oro.gramos.toFixed(2)} g Oro ({formatMoney(reg.oro.valorLiquidacion, reg.oro.moneda)})
                           </div>
-                          <div className="text-slate-700 dark:text-slate-300">
-                            <span className="font-semibold text-teal-600">Recibió:</span>{' '}
-                            {reg.recibePor?.nombre || 'Confidencial'}
+                        )}
+                        {reg.dinero && reg.dinero.monto > 0 && (
+                          <div className="font-bold text-emerald-600 flex items-center gap-1">
+                            <DollarSign className="w-3 h-3" />
+                            {formatMoney(reg.dinero.monto, reg.dinero.moneda)}
                           </div>
-                        </div>
-                      </td>
-
-                      {/* Valores / Materiales */}
-                      <td className="p-3.5">
-                        <div className="space-y-1">
-                          {reg.dinero && reg.dinero.monto > 0 && (
-                            <div className="font-bold text-emerald-600 flex items-center gap-1">
-                              <DollarSign className="w-3.5 h-3.5" />
-                              {formatMoney(reg.dinero.monto, reg.dinero.moneda)}
-                              <span className="text-[10px] font-normal text-slate-400">
-                                ({reg.dinero.metodoPago})
-                              </span>
-                            </div>
-                          )}
-                          {reg.materiales && reg.materiales.length > 0 && (
-                            <div className="text-xs text-slate-600 dark:text-slate-400 flex items-center gap-1">
-                              <Package className="w-3.5 h-3.5 text-slate-500" />
-                              <span>{reg.materiales.length} ítem{reg.materiales.length > 1 ? 's' : ''}</span>
-                            </div>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Estado Drive */}
-                      <td className="p-3.5 text-center">
-                        {reg.sincronizadoDrive ? (
-                          <span
-                            className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full"
-                            title="Guardado en Trabajo/Mono"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Mono</span>
-                          </span>
-                        ) : (
-                          <span
-                            className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full"
-                            title="Pendiente de sincronizar a Drive"
-                          >
-                            Local
-                          </span>
+                        )}
+                        {reg.materiales && reg.materiales.length > 0 && (
+                          <div className="text-slate-500 flex items-center gap-1">
+                            <Package className="w-3 h-3 text-slate-400" />
+                            {reg.materiales.length} ítem(s)
+                          </div>
                         )}
                       </td>
-
-                      {/* Acciones */}
-                      <td className="p-3.5 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                      <td className="p-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
                           <button
                             onClick={() => setSelectedRegistro(reg)}
-                            className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 transition-colors"
-                            title="Ver Acta Completa"
+                            className="p-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+                            title="Ver Acta"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
-
                           <button
                             onClick={() => downloadActaPdf(reg)}
-                            className="p-1.5 rounded-lg text-emerald-700 hover:text-emerald-900 dark:text-emerald-400 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 transition-colors"
+                            className="p-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700"
                             title="Descargar PDF"
                           >
                             <Download className="w-4 h-4" />
                           </button>
-
                           <button
                             onClick={() => handleDelete(reg.id, reg.folio)}
-                            className="p-1.5 rounded-lg text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 dark:bg-red-950/40 transition-colors"
-                            title="Eliminar Registro"
+                            className="p-1 rounded-lg text-red-400 hover:text-red-600"
+                            title="Eliminar"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -494,7 +284,7 @@ export default function HistorialPage() {
         )}
       </div>
 
-      {/* Modal de Comprobante / Acta */}
+      {/* Modal de Comprobante */}
       {selectedRegistro && (
         <ReceiptModal
           registro={selectedRegistro}
