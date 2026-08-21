@@ -1,14 +1,17 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
   X, 
   Share2, 
   Copy, 
   Check, 
   ShieldCheck, 
-  ExternalLink,
-  MessageSquare
+  MessageSquare,
+  History,
+  PlusCircle,
+  Clock
 } from 'lucide-react';
 import { BorradorRemoto } from '@/lib/types';
 import { createDraftToken } from '@/lib/draft-service';
@@ -23,6 +26,7 @@ export default function ShareWhatsAppModal({
   borradorData,
   onClose,
 }: ShareWhatsAppModalProps) {
+  const router = useRouter();
   const [copied, setCopied] = useState(false);
 
   // Generar URL con token
@@ -57,22 +61,27 @@ export default function ShareWhatsAppModal({
     window.open(url, '_blank');
   };
 
+  const handleGoToHistory = () => {
+    onClose();
+    router.push('/historial');
+  };
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
       <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-lg overflow-hidden flex flex-col">
         
         {/* Cabecera */}
-        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-emerald-50/50 dark:bg-emerald-950/20">
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-amber-500/10 dark:bg-amber-950/20">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-green-500 text-white flex items-center justify-center">
-              <Share2 className="w-4 h-4" />
+            <div className="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-bold">
+              <Clock className="w-4 h-4" />
             </div>
             <div>
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                Compartir para Firma por WhatsApp
+                Registro Guardado &bull; Pendiente de Firma
               </h3>
               <p className="text-[11px] text-slate-500">
-                El destinatario firmará desde su celular de forma segura.
+                Guardado en el sistema con folio <strong className="text-slate-800 dark:text-slate-200">{borradorData.folio}</strong>.
               </p>
             </div>
           </div>
@@ -89,8 +98,10 @@ export default function ShareWhatsAppModal({
         <div className="p-6 space-y-4">
           <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs space-y-2">
             <div className="flex justify-between items-center text-slate-500">
-              <span>Folio: <strong>{borradorData.folio}</strong></span>
-              <span className="font-bold text-emerald-600">Acta de {borradorData.tipoOperacion}</span>
+              <span>Folio: <strong className="text-slate-900 dark:text-white">{borradorData.folio}</strong></span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                Pendiente de Firma
+              </span>
             </div>
             <p className="text-slate-700 dark:text-slate-300 font-medium">
               {detalleTexto.replace(/\*/g, '')}
@@ -100,7 +111,7 @@ export default function ShareWhatsAppModal({
           {/* Enlace generado */}
           <div className="space-y-1.5">
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-              Enlace Seguro de Firma (Un solo uso)
+              Enlace de Firma para WhatsApp (Un solo uso)
             </label>
             <div className="flex items-center gap-2">
               <input
@@ -120,31 +131,43 @@ export default function ShareWhatsAppModal({
             </div>
           </div>
 
-          <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 rounded-xl text-[11px] text-amber-800 dark:text-amber-300 flex items-start gap-2">
-            <ShieldCheck className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <div className="p-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-[11px] text-slate-600 dark:text-slate-300 flex items-start gap-2">
+            <ShieldCheck className="w-4 h-4 flex-shrink-0 text-emerald-500 mt-0.5" />
             <span>
-              <strong>Protección Total:</strong> El tercero solo verá este registro para firmar y tomar foto. No podrá ver el historial ni otros registros de tu sistema, y el enlace se bloqueará tras la firma.
+              El formulario ha quedado limpio y listo para registrar uno nuevo. Una vez el tercero firme desde su celular, el estado cambiará automáticamente a <strong>Completado</strong>.
             </span>
           </div>
 
-          {/* Botón WhatsApp */}
-          <div className="pt-2 flex flex-col gap-2">
+          {/* Botones de Acción */}
+          <div className="pt-2 space-y-2">
             <button
               type="button"
               onClick={handleOpenWhatsApp}
               className="w-full py-3 px-4 rounded-2xl bg-green-600 hover:bg-green-500 text-white font-extrabold text-xs sm:text-sm shadow-md active:scale-98 transition-all flex items-center justify-center gap-2"
             >
               <MessageSquare className="w-4 h-4" />
-              <span>Enviar Mensaje por WhatsApp</span>
+              <span>Enviar por WhatsApp</span>
             </button>
 
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-full py-2.5 px-4 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 text-xs font-semibold"
-            >
-              Cerrar
-            </button>
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleGoToHistory}
+                className="py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-all"
+              >
+                <History className="w-3.5 h-3.5" />
+                <span>Ver en Historial</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="py-2.5 px-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all"
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                <span>Crear Nuevo</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

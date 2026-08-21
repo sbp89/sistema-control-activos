@@ -114,6 +114,7 @@ function RemoteSignerContent() {
         clausulaAceptada: true,
         sincronizadoDrive: true,
         completadoRemoto: true,
+        estado: 'COMPLETADO',
         creadoEn: borrador.creadoEn,
         actualizadoEn: new Date().toISOString(),
       };

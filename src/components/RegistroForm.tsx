@@ -153,7 +153,7 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
     }
   };
 
-  // Preparar borrador para compartir por WhatsApp
+  // Preparar borrador, guardar como Pendiente de Firma y compartir por WhatsApp
   const handleShareDraft = () => {
     const folio = generateFolio(tipoOperacion);
     const parsedGramos = parseGramsValue(oroGramos);
@@ -165,8 +165,10 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
       ? materiales.filter((m) => m.descripcion.trim().length > 0 || (m.cantidad && m.cantidad > 0))
       : [];
 
-    const draftData: Partial<BorradorRemoto> = {
-      id: generateId(),
+    const newId = generateId();
+
+    const pendingRegistro: Registro = {
+      id: newId,
       folio,
       tipoOperacion,
       categoria,
@@ -190,15 +192,57 @@ export default function RegistroForm({ onRegistroCreado }: { onRegistroCreado?: 
         numeroComprobante: numeroComprobante || undefined,
       } : undefined,
       materiales: cleanedMateriales.length > 0 ? cleanedMateriales : undefined,
-      firmaEmisor: (tipoOperacion === 'ENTREGA' ? firmaEntrega : firmaRecibe) ? {
-        base64: tipoOperacion === 'ENTREGA' ? firmaEntrega : firmaRecibe,
-        fechaFirma: new Date().toISOString(),
-      } : undefined,
+      firmaEntrega: isEntrega && firmaEntrega ? { base64: firmaEntrega, fechaFirma: new Date().toISOString() } : undefined,
+      firmaRecibe: !isEntrega && firmaRecibe ? { base64: firmaRecibe, fechaFirma: new Date().toISOString() } : undefined,
+      fotos: fotos.length > 0 ? fotos : undefined,
+      observacionesGenerales: observaciones || undefined,
+      clausulaAceptada: true,
+      sincronizadoDrive: false,
+      completadoRemoto: false,
+      estado: 'PENDIENTE_FIRMA',
+      creadoEn: new Date().toISOString(),
+      actualizadoEn: new Date().toISOString(),
+    };
+
+    // 1. Guardar en el sistema como Pendiente de Firma
+    saveRegistro(pendingRegistro);
+    if (onRegistroCreado) onRegistroCreado(pendingRegistro);
+
+    // 2. Preparar el token para WhatsApp
+    const draftData: Partial<BorradorRemoto> = {
+      id: newId,
+      folio,
+      tipoOperacion,
+      categoria,
+      fechaHora: new Date(fechaHora).toISOString(),
+      ubicacion: ubicacion.sede || ubicacion.proyecto ? ubicacion : undefined,
+      entregaPor: entregaPor.nombre || entregaPor.documento ? entregaPor : undefined,
+      recibePor: recibePor.nombre || recibePor.documento ? recibePor : undefined,
+      oro: pendingRegistro.oro,
+      dinero: pendingRegistro.dinero,
+      materiales: pendingRegistro.materiales,
+      firmaEmisor: isEntrega ? pendingRegistro.firmaEntrega : pendingRegistro.firmaRecibe,
       fotosEmisor: fotos.length > 0 ? fotos : undefined,
-      parteAFirmar: tipoOperacion === 'ENTREGA' ? 'RECEPCION' : 'ENTREGA',
+      parteAFirmar: isEntrega ? 'RECEPCION' : 'ENTREGA',
     };
 
     setBorradorToShare(draftData);
+
+    // 3. Resetear formulario para permitir emitir uno nuevo de inmediato
+    setOroGramos('');
+    setOroLiquidacion('');
+    setOroPrecioGramo('');
+    setOroTipoPieza('');
+    setOroObservaciones('');
+    setMontoDinero('');
+    setConceptoDinero('');
+    setNumeroComprobante('');
+    setObservaciones('');
+    setFotos([]);
+    setFirmaEntrega(undefined);
+    setFirmaRecibe(undefined);
+    setEntregaPor({ nombre: '', documento: '', cargoEmpresa: '', telefono: '' });
+    setRecibePor({ nombre: '', documento: '', cargoEmpresa: '', telefono: '' });
   };
 
   // Envío Directo

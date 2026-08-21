@@ -86,6 +86,7 @@ export interface Registro {
   clausulaAceptada?: boolean;
   sincronizadoDrive?: boolean;
   completadoRemoto?: boolean;
+  estado?: 'COMPLETADO' | 'PENDIENTE_FIRMA';
   creadoEn: string;
   actualizadoEn: string;
 }
