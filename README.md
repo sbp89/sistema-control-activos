@@ -27,29 +27,17 @@ Sistema web profesional para el control, custodia y emisión de actas oficiales 
 
 ---
 
-## 🚀 Despliegue en Vercel y Control de Versiones con GitHub
+## 🚀 Despliegue en Vercel y Repositorio en GitHub
 
-### 1. Inicializar y Subir a GitHub
-Abre tu terminal en la carpeta del proyecto y ejecuta:
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fsbp89%2Fsistema-control-activos&project-name=sistema-control-activos)
 
-```bash
-git init
-git add .
-git commit -m "feat: Sistema de Control de Activos con fotos, firmas y Drive Trabajo/Mono"
-git branch -M main
-git remote add origin https://github.com/TU_USUARIO/TU_REPOSITORIO.git
-git push -u origin main
-```
+- **Repositorio Oficial en GitHub**: [https://github.com/sbp89/sistema-control-activos](https://github.com/sbp89/sistema-control-activos)
 
-### 2. Desplegar en Vercel
-1. Entra a [https://vercel.com/](https://vercel.com/) e inicia sesión con tu cuenta de GitHub.
-2. Haz clic en **"Add New..." ➔ "Project"**.
-3. Selecciona el repositorio de GitHub que acabas de subir.
-4. En la configuración del proyecto:
-   - **Framework Preset**: `Next.js` (detectado automáticamente).
-   - **Root Directory**: `./`
-5. Haz clic en **"Deploy"**.
-6. En menos de 1 minuto tendrás tu enlace público de producción (ej. `https://control-activos.vercel.app`).
+### 1. Despliegue Instantáneo en Vercel (1 Clic)
+1. Haz clic en el botón superior **Deploy with Vercel** o entra a [https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fsbp89%2Fsistema-control-activos](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fsbp89%2Fsistema-control-activos).
+2. Inicia sesión con tu cuenta de GitHub (usuario: `sbp89`).
+3. Haz clic en **"Create" / "Deploy"**.
+4. En ~30 segundos tendrás tu enlace público funcionando en producción con HTTPS.
 
 ---
 
