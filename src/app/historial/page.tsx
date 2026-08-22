@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   History, 
   Search, 
@@ -14,10 +14,11 @@ import {
   Clock,
   CheckCircle2,
   Share2,
-  FileText
+  FileText,
+  RefreshCw
 } from 'lucide-react';
 import { Registro, TipoOperacion, CategoriaOperacion, BorradorRemoto } from '@/lib/types';
-import { getStoredRegistros, deleteRegistro } from '@/lib/db';
+import { getStoredRegistros, deleteRegistro, fetchAndSyncRegistros } from '@/lib/db';
 import { formatDate, formatMoney } from '@/lib/utils';
 import { downloadActaPdf } from '@/lib/pdf-generator';
 import ReceiptModal from '@/components/ReceiptModal';
@@ -28,6 +29,7 @@ export default function HistorialPage() {
   const [filteredRegistros, setFilteredRegistros] = useState<Registro[]>([]);
   const [selectedRegistro, setSelectedRegistro] = useState<Registro | null>(null);
   const [borradorToReshare, setBorradorToReshare] = useState<Partial<BorradorRemoto> | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Filtros
   const [searchTerm, setSearchTerm] = useState('');
@@ -36,14 +38,30 @@ export default function HistorialPage() {
   const [estadoFiltro, setEstadoFiltro] = useState<'TODOS' | 'COMPLETADO' | 'PENDIENTE_FIRMA'>('TODOS');
   const [fechaDesde, setFechaDesde] = useState('');
 
-  const loadData = () => {
-    const data = getStoredRegistros();
-    setRegistros(data);
-  };
+  const loadAndSyncData = useCallback(async (showLoading = false) => {
+    if (showLoading) setIsSyncing(true);
+    try {
+      const data = await fetchAndSyncRegistros();
+      setRegistros(data);
+    } catch {
+      setRegistros(getStoredRegistros());
+    } finally {
+      if (showLoading) setIsSyncing(false);
+    }
+  }, []);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    // 1. Carga inicial inmediata
+    setRegistros(getStoredRegistros());
+    loadAndSyncData();
+
+    // 2. Sincronización periódica en segundo plano cada 5 segundos para detectar firmas remotas al instante
+    const interval = setInterval(() => {
+      loadAndSyncData(false);
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [loadAndSyncData]);
 
   useEffect(() => {
     let result = [...registros];
@@ -92,7 +110,7 @@ export default function HistorialPage() {
   const handleDelete = (id: string, folio: string) => {
     if (confirm(`¿Estás seguro de eliminar el registro ${folio}?`)) {
       deleteRegistro(id);
-      loadData();
+      setRegistros((prev) => prev.filter((r) => r.id !== id));
     }
   };
 
@@ -183,17 +201,29 @@ export default function HistorialPage() {
             <span>Historial de Actas</span>
           </h1>
           <p className="text-xs text-slate-500">
-            Consulta, descarga actas en PDF o exporta a Excel.
+            Sincronización en tiempo real con firmas remotas de WhatsApp.
           </p>
         </div>
 
-        <button
-          onClick={handleExportCsv}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-sm self-start sm:self-auto"
-        >
-          <FileSpreadsheet className="w-4 h-4" />
-          <span>Exportar a Excel</span>
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            onClick={() => loadAndSyncData(true)}
+            disabled={isSyncing}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all shadow-sm disabled:opacity-50"
+            title="Actualizar y sincronizar firmas"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-emerald-600' : ''}`} />
+            <span>{isSyncing ? 'Sincronizando...' : 'Actualizar'}</span>
+          </button>
+
+          <button
+            onClick={handleExportCsv}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-sm"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Exportar a Excel</span>
+          </button>
+        </div>
       </div>
 
       {/* Barra de Filtros */}
@@ -293,12 +323,12 @@ export default function HistorialPage() {
                       {/* Estado */}
                       <td className="p-3">
                         {isPendiente ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 animate-pulse">
                             <Clock className="w-3 h-3" />
                             <span>Pendiente Firma</span>
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
                             <CheckCircle2 className="w-3 h-3" />
                             <span>Completado</span>
                           </span>
@@ -342,7 +372,7 @@ export default function HistorialPage() {
                           {isPendiente && (
                             <button
                               onClick={() => handleReshare(reg)}
-                              className="p-1 rounded-lg bg-green-50 hover:bg-green-100 dark:bg-green-950/50 text-green-700 dark:text-green-300"
+                              className="p-1.5 rounded-lg bg-green-50 hover:bg-green-100 dark:bg-green-950/50 text-green-700 dark:text-green-300 transition-colors"
                               title="Reenviar enlace por WhatsApp"
                             >
                               <Share2 className="w-4 h-4" />
@@ -350,21 +380,21 @@ export default function HistorialPage() {
                           )}
                           <button
                             onClick={() => setSelectedRegistro(reg)}
-                            className="p-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
-                            title="Ver Detalle"
+                            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 transition-colors"
+                            title="Ver Detalle y Firma"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => downloadActaPdf(reg)}
-                            className="p-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700"
+                            className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 transition-colors"
                             title="Descargar PDF"
                           >
                             <Download className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDelete(reg.id, reg.folio)}
-                            className="p-1 rounded-lg text-red-400 hover:text-red-600"
+                            className="p-1.5 rounded-lg text-red-400 hover:text-red-600 transition-colors"
                             title="Eliminar"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -385,7 +415,7 @@ export default function HistorialPage() {
         <ReceiptModal
           registro={selectedRegistro}
           onClose={() => setSelectedRegistro(null)}
-          onUpdateRegistro={() => loadData()}
+          onUpdateRegistro={() => loadAndSyncData(true)}
         />
       )}
 

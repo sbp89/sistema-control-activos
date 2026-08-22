@@ -42,6 +42,7 @@ const DEMO_REGISTROS: Registro[] = [
     observacionesGenerales: 'Entrega de material aurífero pesado en balanza calibrada.',
     clausulaAceptada: true,
     sincronizadoDrive: true,
+    estado: 'COMPLETADO',
     creadoEn: new Date(Date.now() - 3600000 * 2).toISOString(),
     actualizadoEn: new Date(Date.now() - 3600000 * 2).toISOString(),
   },
@@ -78,60 +79,9 @@ const DEMO_REGISTROS: Registro[] = [
     observacionesGenerales: 'Recibido en efectivo a conformidad previa verificación de billetes.',
     clausulaAceptada: true,
     sincronizadoDrive: false,
+    estado: 'COMPLETADO',
     creadoEn: new Date(Date.now() - 3600000 * 4).toISOString(),
     actualizadoEn: new Date(Date.now() - 3600000 * 4).toISOString(),
-  },
-  {
-    id: 'demo-2',
-    folio: 'REC-20260821-2093',
-    tipoOperacion: 'RECEPCION',
-    categoria: 'MATERIAL',
-    fechaHora: new Date(Date.now() - 3600000 * 1).toISOString(),
-    ubicacion: {
-      sede: 'Almacén Central',
-      proyecto: 'Mantenimiento General',
-    },
-    entregaPor: {
-      nombre: 'Proveedor Ferretería Industrial',
-      cargoEmpresa: 'Logística',
-    },
-    recibePor: {
-      nombre: 'Mauricio Silva',
-      documento: 'CC 1019283746',
-      cargoEmpresa: 'Jefe de Almacén',
-    },
-    materiales: [
-      {
-        id: 'mat-1',
-        descripcion: 'Taladro Percutor Industrial 850W DeWalt',
-        cantidad: 2,
-        unidad: 'unidades',
-        estado: 'NUEVO',
-        numeroSerie: 'DW-85921-2026',
-        codigoInventario: 'HERR-0042',
-      },
-      {
-        id: 'mat-2',
-        descripcion: 'Extensión eléctrica uso rudo 30 metros',
-        cantidad: 4,
-        unidad: 'unidades',
-        estado: 'NUEVO',
-        codigoInventario: 'ELEC-0108',
-      },
-      {
-        id: 'mat-3',
-        descripcion: 'Juego de llaves combinadas 8-24mm',
-        cantidad: 1,
-        unidad: 'juegos',
-        estado: 'BUENO',
-        codigoInventario: 'HERR-0071',
-      },
-    ],
-    observacionesGenerales: 'Materiales recibidos completos en cajas selladas.',
-    clausulaAceptada: true,
-    sincronizadoDrive: false,
-    creadoEn: new Date(Date.now() - 3600000 * 1).toISOString(),
-    actualizadoEn: new Date(Date.now() - 3600000 * 1).toISOString(),
   },
 ];
 
@@ -155,6 +105,9 @@ export function getRegistroById(id: string): Registro | undefined {
   return list.find((r) => r.id === id);
 }
 
+/**
+ * Guarda el registro localmente y lo envía al servidor para sincronización multi-dispositivo en tiempo real.
+ */
 export function saveRegistro(registro: Registro): Registro {
   if (typeof window === 'undefined') return registro;
   try {
@@ -162,25 +115,95 @@ export function saveRegistro(registro: Registro): Registro {
     const index = list.findIndex((r) => r.id === registro.id);
     let updated: Registro[];
 
+    const finalRecord: Registro = {
+      ...registro,
+      creadoEn: registro.creadoEn || new Date().toISOString(),
+      actualizadoEn: new Date().toISOString(),
+    };
+
     if (index >= 0) {
       updated = [...list];
-      updated[index] = { ...registro, actualizadoEn: new Date().toISOString() };
+      updated[index] = finalRecord;
     } else {
-      updated = [
-        {
-          ...registro,
-          creadoEn: registro.creadoEn || new Date().toISOString(),
-          actualizadoEn: new Date().toISOString(),
-        },
-        ...list,
-      ];
+      updated = [finalRecord, ...list];
     }
 
     localStorage.setItem(STORAGE_KEY_REGISTROS, JSON.stringify(updated));
-    return updated[index >= 0 ? index : 0];
+
+    // Sincronizar en segundo plano con el servidor de la aplicación
+    fetch('/api/registros', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(finalRecord),
+    }).catch((err) => {
+      console.warn('Sincronización en segundo plano con servidor:', err);
+    });
+
+    return finalRecord;
   } catch (error) {
     console.error('Error al guardar registro:', error);
     return registro;
+  }
+}
+
+/**
+ * Sincroniza y fusiona los registros locales con el servidor central para ver firmas remotas en tiempo real.
+ */
+export async function fetchAndSyncRegistros(): Promise<Registro[]> {
+  const localList = getStoredRegistros();
+
+  try {
+    const res = await fetch('/api/registros', {
+      method: 'GET',
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+
+    if (!res.ok) return localList;
+
+    const data = await res.json();
+    if (!data || !Array.isArray(data.registros)) return localList;
+
+    const serverList: Registro[] = data.registros;
+
+    // Mapa para fusionar registros dando prioridad a los completados o más recientes
+    const mergedMap = new Map<string, Registro>();
+
+    localList.forEach((r) => mergedMap.set(r.id, r));
+
+    serverList.forEach((serverReg) => {
+      const localReg = mergedMap.get(serverReg.id);
+      if (!localReg) {
+        mergedMap.set(serverReg.id, serverReg);
+      } else {
+        // Si el servidor ya tiene la firma o está COMPLETADO, usar el del servidor
+        if (serverReg.estado === 'COMPLETADO' || serverReg.firmaRecibe || serverReg.firmaEntrega) {
+          mergedMap.set(serverReg.id, {
+            ...localReg,
+            ...serverReg,
+          });
+        } else {
+          // Usar el más recientemente actualizado
+          const localTime = new Date(localReg.actualizadoEn || 0).getTime();
+          const serverTime = new Date(serverReg.actualizadoEn || 0).getTime();
+          if (serverTime >= localTime) {
+            mergedMap.set(serverReg.id, serverReg);
+          }
+        }
+      }
+    });
+
+    const finalMerged = Array.from(mergedMap.values()).sort(
+      (a, b) => new Date(b.fechaHora).getTime() - new Date(a.fechaHora).getTime()
+    );
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY_REGISTROS, JSON.stringify(finalMerged));
+    }
+
+    return finalMerged;
+  } catch (err) {
+    console.warn('Error al sincronizar con servidor:', err);
+    return localList;
   }
 }
 
@@ -190,6 +213,12 @@ export function deleteRegistro(id: string): boolean {
     const list = getStoredRegistros();
     const filtered = list.filter((r) => r.id !== id);
     localStorage.setItem(STORAGE_KEY_REGISTROS, JSON.stringify(filtered));
+
+    // Eliminar también del servidor
+    fetch(`/api/registros?id=${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }).catch(() => {});
+
     return true;
   } catch (error) {
     console.error('Error al eliminar registro:', error);
@@ -270,28 +299,4 @@ export function getEstadisticas(registros?: Registro[]): ResumenEstadisticas {
     totalMaterialesEntregados,
     totalMaterialesRecibidos,
   };
-}
-
-export function exportAllDataAsJson(): string {
-  const registros = getStoredRegistros();
-  const config = getGoogleDriveConfig();
-  return JSON.stringify({ version: '1.0', exportDate: new Date().toISOString(), config, registros }, null, 2);
-}
-
-export function importDataFromJson(jsonStr: string): { success: boolean; count: number; error?: string } {
-  try {
-    const parsed = JSON.parse(jsonStr);
-    if (!parsed || !Array.isArray(parsed.registros)) {
-      return { success: false, count: 0, error: 'Formato JSON inválido: debe contener un array "registros".' };
-    }
-    const current = getStoredRegistros();
-    const mergedMap = new Map<string, Registro>();
-    current.forEach((r) => mergedMap.set(r.id, r));
-    parsed.registros.forEach((r: Registro) => mergedMap.set(r.id, r));
-    const merged = Array.from(mergedMap.values());
-    localStorage.setItem(STORAGE_KEY_REGISTROS, JSON.stringify(merged));
-    return { success: true, count: parsed.registros.length };
-  } catch (err: any) {
-    return { success: false, count: 0, error: err?.message || 'Error al procesar JSON' };
-  }
 }

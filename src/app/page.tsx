@@ -9,11 +9,13 @@ import {
   Coins, 
   DollarSign, 
   Package, 
-  ArrowRight
+  ArrowRight,
+  Clock,
+  CheckCircle2
 } from 'lucide-react';
 import RegistroForm from '@/components/RegistroForm';
 import ReceiptModal from '@/components/ReceiptModal';
-import { getStoredRegistros } from '@/lib/db';
+import { getStoredRegistros, fetchAndSyncRegistros } from '@/lib/db';
 import { Registro } from '@/lib/types';
 import { formatDate, formatMoney } from '@/lib/utils';
 import { downloadActaPdf } from '@/lib/pdf-generator';
@@ -22,12 +24,18 @@ export default function HomePage() {
   const [registros, setRegistros] = useState<Registro[]>([]);
   const [selectedRegistro, setSelectedRegistro] = useState<Registro | null>(null);
 
-  const reloadData = () => {
+  const reloadData = async () => {
     setRegistros(getStoredRegistros());
+    try {
+      const live = await fetchAndSyncRegistros();
+      setRegistros(live);
+    } catch {}
   };
 
   useEffect(() => {
     reloadData();
+    const interval = setInterval(reloadData, 6000);
+    return () => clearInterval(interval);
   }, []);
 
   const ultimosRegistros = registros.slice(0, 5);
@@ -59,6 +67,8 @@ export default function HomePage() {
           <div className="divide-y divide-slate-100 dark:divide-slate-800">
             {ultimosRegistros.map((reg) => {
               const isEntrega = reg.tipoOperacion === 'ENTREGA';
+              const isPendiente = reg.estado === 'PENDIENTE_FIRMA';
+
               return (
                 <div
                   key={reg.id}
@@ -80,6 +90,19 @@ export default function HomePage() {
                         <span className="font-mono text-xs font-bold text-slate-800 dark:text-slate-200">
                           {reg.folio}
                         </span>
+
+                        {isPendiente ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                            <Clock className="w-2.5 h-2.5" />
+                            <span>Pendiente</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                            <CheckCircle2 className="w-2.5 h-2.5" />
+                            <span>Completado</span>
+                          </span>
+                        )}
+
                         <span className="text-xs text-slate-400">•</span>
                         <span className="text-xs text-slate-500">{formatDate(reg.fechaHora)}</span>
                       </div>
