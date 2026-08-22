@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   X, 
@@ -11,10 +11,11 @@ import {
   MessageSquare,
   History,
   PlusCircle,
-  Clock
+  Clock,
+  ExternalLink
 } from 'lucide-react';
 import { BorradorRemoto } from '@/lib/types';
-import { createDraftToken } from '@/lib/draft-service';
+import { createCompactDraftToken, saveDraftToServer } from '@/lib/draft-service';
 import { formatMoney } from '@/lib/utils';
 
 interface ShareWhatsAppModalProps {
@@ -29,26 +30,40 @@ export default function ShareWhatsAppModal({
   const router = useRouter();
   const [copied, setCopied] = useState(false);
 
-  // Generar URL con token
-  const token = createDraftToken(borradorData);
+  // Generar token compacto
+  const compactToken = createCompactDraftToken(borradorData);
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
-  const signingUrl = `${baseUrl}/firmar?t=${token}`;
+  const signingUrl = `${baseUrl}/firmar?t=${compactToken}`;
 
-  let detalleTexto = '';
+  // Persistir en servidor al abrir
+  useEffect(() => {
+    if (borradorData.id) {
+      saveDraftToServer(borradorData as BorradorRemoto);
+    }
+  }, [borradorData]);
+
+  // Construir resumen corto y profesional para el mensaje
+  let conceptoResumen = '';
   if (borradorData.oro && borradorData.oro.gramos > 0) {
-    detalleTexto = `• *Oro:* ${borradorData.oro.gramos} g (Liquidación: ${formatMoney(borradorData.oro.valorLiquidacion, borradorData.oro.moneda)})`;
+    conceptoResumen = `🥇 *Oro:* ${borradorData.oro.gramos.toFixed(2)} g | Total: ${formatMoney(borradorData.oro.valorLiquidacion, borradorData.oro.moneda)}`;
   } else if (borradorData.dinero && borradorData.dinero.monto > 0) {
-    detalleTexto = `• *Dinero:* ${formatMoney(borradorData.dinero.monto, borradorData.dinero.moneda)}`;
+    conceptoResumen = `💵 *Dinero:* ${formatMoney(borradorData.dinero.monto, borradorData.dinero.moneda)} (${borradorData.dinero.metodoPago || 'Efectivo'})`;
   } else if (borradorData.materiales && borradorData.materiales.length > 0) {
-    detalleTexto = `• *Materiales:* ${borradorData.materiales.length} ítem(s)`;
+    conceptoResumen = `📦 *Materiales:* ${borradorData.materiales.length} ítem(s) registrados`;
+  } else {
+    conceptoResumen = `Transacción oficial`;
   }
 
-  const whatsappMessage = `*SOLICITUD DE FIRMA DE ACTA*\n\n` +
-    `Hola, se ha pre-diligenciado el acta de *${borradorData.tipoOperacion}* con folio *${borradorData.folio}*.\n\n` +
-    `${detalleTexto}\n\n` +
-    `Por favor ingresa al siguiente enlace seguro desde tu celular para verificar, tomar foto si aplica y firmar con tu dedo:\n` +
-    `${signingUrl}\n\n` +
-    `_Nota: Este enlace es de un solo uso y se cerrará automáticamente una vez firmes._`;
+  const operacionTexto = borradorData.tipoOperacion === 'ENTREGA' ? 'Entrega' : 'Recepción';
+
+  // Mensaje corto y claro de WhatsApp
+  const whatsappMessage = 
+    `📋 *CONTROL DE CUSTODIA - ACTA DE ${operacionTexto.toUpperCase()}*\n\n` +
+    `Hola, se ha pre-diligenciado el acta oficial *Folio: ${borradorData.folio}*.\n\n` +
+    `📌 *Detalle:* ${conceptoResumen.replace(/\*/g, '')}\n\n` +
+    `Por favor ingresa desde tu celular para verificar los datos y firmar con tu dedo:\n` +
+    `👉 ${signingUrl}\n\n` +
+    `_Enlace de un solo uso. No requiere crear cuenta ni descargar apps._`;
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(signingUrl);
@@ -72,23 +87,23 @@ export default function ShareWhatsAppModal({
         
         {/* Cabecera */}
         <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-amber-500/10 dark:bg-amber-950/20">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-bold">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-black">
               <Clock className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+              <h3 className="text-sm font-black text-slate-900 dark:text-white">
                 Registro Guardado &bull; Pendiente de Firma
               </h3>
               <p className="text-[11px] text-slate-500">
-                Guardado en el sistema con folio <strong className="text-slate-800 dark:text-slate-200">{borradorData.folio}</strong>.
+                Folio oficial: <strong className="text-slate-800 dark:text-slate-200 font-mono">{borradorData.folio}</strong>
               </p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-200 dark:hover:bg-slate-800"
+            className="p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -96,34 +111,36 @@ export default function ShareWhatsAppModal({
 
         {/* Contenido */}
         <div className="p-6 space-y-4">
-          <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs space-y-2">
-            <div className="flex justify-between items-center text-slate-500">
-              <span>Folio: <strong className="text-slate-900 dark:text-white">{borradorData.folio}</strong></span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-600 dark:text-amber-400">
-                Pendiente de Firma
-              </span>
-            </div>
-            <p className="text-slate-700 dark:text-slate-300 font-medium">
-              {detalleTexto.replace(/\*/g, '')}
+          
+          {/* Vista previa del mensaje */}
+          <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs space-y-1.5">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+              Vista Previa del Mensaje de WhatsApp
+            </span>
+            <p className="text-slate-800 dark:text-slate-200 font-semibold leading-snug">
+              📋 <strong>CONTROL DE CUSTODIA - ACTA DE {operacionTexto.toUpperCase()}</strong>
+            </p>
+            <p className="text-slate-600 dark:text-slate-300 text-[11px]">
+              Folio: <strong>{borradorData.folio}</strong> &bull; {conceptoResumen.replace(/\*/g, '')}
             </p>
           </div>
 
           {/* Enlace generado */}
           <div className="space-y-1.5">
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-              Enlace de Firma para WhatsApp (Un solo uso)
+              Enlace Corto para Firma
             </label>
             <div className="flex items-center gap-2">
               <input
                 type="text"
                 readOnly
                 value={signingUrl}
-                className="w-full px-3 py-2 text-xs font-mono rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 select-all"
+                className="w-full px-3 py-2 text-xs font-mono rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 select-all"
               />
               <button
                 type="button"
                 onClick={handleCopyLink}
-                className="px-3 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center gap-1 transition-all"
+                className="px-3.5 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95"
               >
                 {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
                 <span>{copied ? 'Copiado' : 'Copiar'}</span>
@@ -131,10 +148,11 @@ export default function ShareWhatsAppModal({
             </div>
           </div>
 
-          <div className="p-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-[11px] text-slate-600 dark:text-slate-300 flex items-start gap-2">
-            <ShieldCheck className="w-4 h-4 flex-shrink-0 text-emerald-500 mt-0.5" />
+          {/* Información de seguridad */}
+          <div className="p-3 bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/60 rounded-xl text-[11px] text-emerald-900 dark:text-emerald-300 flex items-start gap-2">
+            <ShieldCheck className="w-4 h-4 flex-shrink-0 text-emerald-600 mt-0.5" />
             <span>
-              El formulario ha quedado limpio y listo para registrar uno nuevo. Una vez el tercero firme desde su celular, el estado cambiará automáticamente a <strong>Completado</strong>.
+              El tercero podrá abrir el enlace desde cualquier celular, revisar los datos y firmar de inmediato. No requiere contraseña y el enlace caduca tras ser firmado.
             </span>
           </div>
 
@@ -143,7 +161,7 @@ export default function ShareWhatsAppModal({
             <button
               type="button"
               onClick={handleOpenWhatsApp}
-              className="w-full py-3 px-4 rounded-2xl bg-green-600 hover:bg-green-500 text-white font-extrabold text-xs sm:text-sm shadow-md active:scale-98 transition-all flex items-center justify-center gap-2"
+              className="w-full py-3.5 px-4 rounded-2xl bg-green-600 hover:bg-green-500 text-white font-extrabold text-xs sm:text-sm shadow-md active:scale-98 transition-all flex items-center justify-center gap-2"
             >
               <MessageSquare className="w-4 h-4" />
               <span>Enviar por WhatsApp</span>

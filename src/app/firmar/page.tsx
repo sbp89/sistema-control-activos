@@ -9,16 +9,15 @@ import {
   Package, 
   Lock, 
   CheckCircle2, 
-  Calendar, 
   UserCheck, 
   PenLine, 
   RefreshCw,
-  AlertCircle
+  Clock
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { BorradorRemoto, Registro, EvidenciaFoto } from '@/lib/types';
-import { decodeDraftToken, isDraftCompleted, markDraftCompleted } from '@/lib/draft-service';
-import { formatDate, formatMoney } from '@/lib/utils';
+import { decodeCompactDraftToken, isDraftCompleted, markDraftCompleted } from '@/lib/draft-service';
+import { formatMoney } from '@/lib/utils';
 import { saveRegistro } from '@/lib/db';
 import { sendPdfToDrive } from '@/lib/drive-service';
 import SignaturePad from '@/components/SignaturePad';
@@ -27,9 +26,12 @@ import CameraCapture from '@/components/CameraCapture';
 function RemoteSignerContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get('t');
+  const draftId = searchParams.get('id') || searchParams.get('f');
 
   const [borrador, setBorrador] = useState<BorradorRemoto | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isExpiredOrCompleted, setIsExpiredOrCompleted] = useState(false);
+  
   const [firmaReceptor, setFirmaReceptor] = useState<string | undefined>(undefined);
   const [fotosReceptor, setFotosReceptor] = useState<EvidenciaFoto[]>([]);
   const [nombreFirmante, setNombreFirmante] = useState<string>('');
@@ -39,34 +41,62 @@ function RemoteSignerContent() {
   const [isFinished, setIsFinished] = useState(false);
 
   useEffect(() => {
-    if (!token) {
-      setIsExpiredOrCompleted(true);
-      return;
-    }
+    const loadDraft = async () => {
+      setIsLoading(true);
 
-    const decoded = decodeDraftToken(token);
-    if (!decoded) {
-      setIsExpiredOrCompleted(true);
-      return;
-    }
+      // 1. Intentar decodificar token compacto de URL si existe
+      let draftData: BorradorRemoto | null = null;
+      if (token) {
+        draftData = decodeCompactDraftToken(token);
+      }
 
-    // Verificar si ya fue completado
-    if (isDraftCompleted(decoded.id) || decoded.completado) {
-      setIsExpiredOrCompleted(true);
-      return;
-    }
+      // 2. Si no hay token o falló, buscar en API serverless por ID o folio
+      const queryId = draftId || (draftData ? draftData.id : null) || (draftData ? draftData.folio : null);
+      
+      if (queryId) {
+        try {
+          const res = await fetch(`/api/borradores?id=${encodeURIComponent(queryId)}`);
+          const json = await res.json();
+          if (json.completed) {
+            setIsExpiredOrCompleted(true);
+            setIsLoading(false);
+            return;
+          }
+          if (json.draft && !draftData) {
+            draftData = json.draft;
+          }
+        } catch {}
+      }
 
-    setBorrador(decoded);
+      if (!draftData) {
+        setIsExpiredOrCompleted(true);
+        setIsLoading(false);
+        return;
+      }
 
-    // Pre-cargar nombre si venía en el borrador
-    if (decoded.parteAFirmar === 'RECEPCION' && decoded.recibePor?.nombre) {
-      setNombreFirmante(decoded.recibePor.nombre);
-      setDocumentoFirmante(decoded.recibePor.documento || '');
-    } else if (decoded.parteAFirmar === 'ENTREGA' && decoded.entregaPor?.nombre) {
-      setNombreFirmante(decoded.entregaPor.nombre);
-      setDocumentoFirmante(decoded.entregaPor.documento || '');
-    }
-  }, [token]);
+      // Verificar si ya fue completado localmente
+      if (isDraftCompleted(draftData.id) || (draftData.folio && isDraftCompleted(draftData.folio))) {
+        setIsExpiredOrCompleted(true);
+        setIsLoading(false);
+        return;
+      }
+
+      setBorrador(draftData);
+
+      // Pre-cargar datos del firmante si venían pre-diligenciados
+      if (draftData.parteAFirmar === 'RECEPCION' && draftData.recibePor?.nombre) {
+        setNombreFirmante(draftData.recibePor.nombre);
+        setDocumentoFirmante(draftData.recibePor.documento || '');
+      } else if (draftData.parteAFirmar === 'ENTREGA' && draftData.entregaPor?.nombre) {
+        setNombreFirmante(draftData.entregaPor.nombre);
+        setDocumentoFirmante(draftData.entregaPor.documento || '');
+      }
+
+      setIsLoading(false);
+    };
+
+    loadDraft();
+  }, [token, draftId]);
 
   const handleConfirmSignature = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,10 +105,8 @@ function RemoteSignerContent() {
     setIsSubmitting(true);
 
     try {
-      // Combinar fotos del emisor con las del receptor
       const allPhotos = [...(borrador.fotosEmisor || []), ...fotosReceptor];
 
-      // Determinar firmas
       const firmaEntrega = borrador.parteAFirmar === 'ENTREGA'
         ? (firmaReceptor ? { base64: firmaReceptor, fechaFirma: new Date().toISOString() } : undefined)
         : borrador.firmaEmisor;
@@ -87,7 +115,6 @@ function RemoteSignerContent() {
         ? (firmaReceptor ? { base64: firmaReceptor, fechaFirma: new Date().toISOString() } : undefined)
         : borrador.firmaEmisor;
 
-      // Actualizar datos del firmante si los modificó
       const updatedEntregaPor = borrador.parteAFirmar === 'ENTREGA'
         ? { ...borrador.entregaPor, nombre: nombreFirmante || borrador.entregaPor?.nombre, documento: documentoFirmante || borrador.entregaPor?.documento }
         : borrador.entregaPor;
@@ -126,7 +153,7 @@ function RemoteSignerContent() {
       sendPdfToDrive(finalRegistro);
 
       // Bloquear permanentemente el token
-      markDraftCompleted(borrador.id);
+      markDraftCompleted(borrador.id, borrador.folio);
 
       try {
         confetti({
@@ -144,8 +171,18 @@ function RemoteSignerContent() {
     }
   };
 
+  // Pantalla de Carga
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 text-white space-y-3">
+        <RefreshCw className="w-8 h-8 animate-spin text-emerald-400" />
+        <p className="text-xs text-slate-400 font-medium">Cargando documento oficial...</p>
+      </div>
+    );
+  }
+
   // Pantalla de Enlace Expirado o Ya Completado
-  if (isExpiredOrCompleted) {
+  if (isExpiredOrCompleted || !borrador) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-md w-full text-center space-y-4 shadow-2xl">
@@ -154,7 +191,7 @@ function RemoteSignerContent() {
           </div>
           <h2 className="text-xl font-bold text-white">Enlace No Disponible</h2>
           <p className="text-xs text-slate-400 leading-relaxed">
-            Este enlace ya ha sido completado y firmado exitosamente, o ha caducado. Por motivos de seguridad y confidencialidad, no es posible acceder nuevamente al contenido.
+            Este enlace ya ha sido completado y firmado exitosamente, o ha caducado. Por motivos de seguridad y confidencialidad, el documento ya no se encuentra accesible.
           </p>
         </div>
       </div>
@@ -181,15 +218,6 @@ function RemoteSignerContent() {
     );
   }
 
-  if (!borrador) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 text-white">
-        <RefreshCw className="w-6 h-6 animate-spin text-emerald-400" />
-      </div>
-    );
-  }
-
-  const isEntrega = borrador.tipoOperacion === 'ENTREGA';
   const roleLabel = borrador.parteAFirmar === 'RECEPCION' ? 'Recepción (Quien Recibe)' : 'Entrega (Quien Entrega)';
 
   return (
